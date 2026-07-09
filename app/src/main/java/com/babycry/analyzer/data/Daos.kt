@@ -59,6 +59,9 @@ interface FeedingDao {
     @Query("SELECT * FROM feeding_events ORDER BY timestamp DESC LIMIT :limit")
     fun recent(limit: Int = 50): Flow<List<FeedingEvent>>
 
+    @Query("SELECT * FROM feeding_events ORDER BY timestamp DESC")
+    suspend fun allList(): List<FeedingEvent>
+
     @Query("DELETE FROM feeding_events")
     suspend fun clear()
 }

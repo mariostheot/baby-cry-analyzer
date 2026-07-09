@@ -19,10 +19,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -33,7 +33,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -55,11 +54,11 @@ import kotlin.math.roundToInt
 fun HomeScreen(
     viewModel: CryViewModel,
     onListen: () -> Unit,
+    onShare: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.home.collectAsState()
-    val personalization by viewModel.personalizationEnabled.collectAsState()
-    val context by viewModel.contextEnabled.collectAsState()
+    val profile by viewModel.profile.collectAsState()
 
     Column(
         modifier = modifier
@@ -78,6 +77,14 @@ fun HomeScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
         )
+        if (profile.hasName) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "👶 " + profile.name + babyAgeSuffix(profile),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
 
         Spacer(Modifier.height(28.dp))
         ListenButton(phase = state.phase, level = state.level, onClick = onListen)
@@ -98,6 +105,9 @@ fun HomeScreen(
             ResultCard(
                 analysis = state.analysis!!,
                 feedbackGiven = state.feedbackGiven,
+                canReplay = viewModel.canReplay,
+                onReplay = { viewModel.playLastRecording() },
+                onShare = onShare,
                 onCorrect = { viewModel.confirmPredictionCorrect() },
                 onCorrectTo = { viewModel.correctTo(it) },
             )
@@ -110,14 +120,6 @@ fun HomeScreen(
             Text("Τάισμα τώρα")
         }
 
-        Spacer(Modifier.height(20.dp))
-        SettingsCard(
-            personalization = personalization,
-            context = context,
-            onPersonalization = viewModel::setPersonalization,
-            onContext = viewModel::setContext,
-        )
-
         Spacer(Modifier.height(16.dp))
         Text(
             text = "Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή. Αν ανησυχείς για την υγεία του μωρού, ρώτησε παιδίατρο.",
@@ -125,6 +127,15 @@ fun HomeScreen(
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
         )
+    }
+}
+
+private fun babyAgeSuffix(profile: com.babycry.analyzer.model.BabyProfile): String {
+    val months = profile.ageMonths() ?: return ""
+    return when {
+        months < 1 -> " · νεογέννητο"
+        months < 24 -> " · $months μηνών"
+        else -> " · ${months / 12} ετών"
     }
 }
 
@@ -172,6 +183,9 @@ private fun ListenButton(phase: Phase, level: Float, onClick: () -> Unit) {
 private fun ResultCard(
     analysis: CryAnalysis,
     feedbackGiven: Boolean,
+    canReplay: Boolean,
+    onReplay: () -> Unit,
+    onShare: () -> Unit,
     onCorrect: () -> Unit,
     onCorrectTo: (CryReason) -> Unit,
 ) {
@@ -218,6 +232,24 @@ private fun ResultCard(
 
             Spacer(Modifier.height(12.dp))
             Text(top.advice, style = MaterialTheme.typography.bodyMedium)
+
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onReplay,
+                    enabled = canReplay,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                    Spacer(Modifier.size(6.dp))
+                    Text("Άκου ξανά", maxLines = 1)
+                }
+                OutlinedButton(onClick = onShare, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.Share, contentDescription = null)
+                    Spacer(Modifier.size(6.dp))
+                    Text("Κοινοποίηση", maxLines = 1)
+                }
+            }
 
             Spacer(Modifier.height(16.dp))
             Divider()
@@ -295,62 +327,3 @@ private fun ScoreBar(reason: CryReason, probability: Float) {
     }
 }
 
-@Composable
-private fun SettingsCard(
-    personalization: Boolean,
-    context: Boolean,
-    onPersonalization: (Boolean) -> Unit,
-    onContext: (Boolean) -> Unit,
-) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            ToggleRow(
-                title = "Μαθαίνει από εσένα",
-                subtitle = "Χρησιμοποιεί τις διορθώσεις σου",
-                checked = personalization,
-                onCheckedChange = onPersonalization,
-            )
-            Spacer(Modifier.height(8.dp))
-            ToggleRow(
-                title = "Πλαίσιο (τάισμα/ώρα)",
-                subtitle = "Σταθμίζει με βάση την τελευταία σίτιση",
-                checked = context,
-                onCheckedChange = onContext,
-            )
-        }
-    }
-}
-
-@Composable
-private fun ToggleRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            )
-        }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
-}
-
-@Suppress("unused")
-@Composable
-private fun EngineChip(engine: AnalysisEngine) {
-    AssistChip(
-        onClick = {},
-        label = { Text(if (engine == AnalysisEngine.MODEL) "AI" else "Πρόχειρο") },
-        colors = AssistChipDefaults.assistChipColors(),
-    )
-}

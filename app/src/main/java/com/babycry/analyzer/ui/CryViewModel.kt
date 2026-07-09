@@ -3,6 +3,7 @@ package com.babycry.analyzer.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.babycry.analyzer.audio.AudioPlayer
 import com.babycry.analyzer.audio.AudioRecorder
 import com.babycry.analyzer.data.CryEvent
 import com.babycry.analyzer.data.CryRepository
@@ -10,6 +11,7 @@ import com.babycry.analyzer.data.FeedingEvent
 import com.babycry.analyzer.data.StatsSummary
 import com.babycry.analyzer.ml.CryAnalysis
 import com.babycry.analyzer.model.AnalysisEngine
+import com.babycry.analyzer.model.BabyProfile
 import com.babycry.analyzer.model.CryReason
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 enum class Phase { IDLE, RECORDING, ANALYZING, RESULT }
 
@@ -34,6 +37,8 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = CryRepository.get(app)
     private val recorder = AudioRecorder()
+    private val player = AudioPlayer()
+    private var lastWaveform: FloatArray? = null
 
     val labels: List<CryReason> get() = repo.labels
     val hasModel: Boolean get() = repo.hasModel
@@ -46,6 +51,11 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _contextEnabled = MutableStateFlow(true)
     val contextEnabled: StateFlow<Boolean> = _contextEnabled.asStateFlow()
+
+    private val _profile = MutableStateFlow(repo.getProfile())
+    val profile: StateFlow<BabyProfile> = _profile.asStateFlow()
+
+    val canReplay: Boolean get() = lastWaveform != null
 
     val feedbackCount: StateFlow<Int> = repo.feedbackCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -101,6 +111,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 return@launch
             }
+            lastWaveform = waveform
             _home.update { it.copy(phase = Phase.ANALYZING, level = 0f) }
             try {
                 val analysis = repo.analyze(
@@ -149,6 +160,61 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Play back the clip that was just analyzed. */
+    fun playLastRecording() {
+        val wave = lastWaveform ?: return
+        viewModelScope.launch { player.play(wave) }
+    }
+
+    /** A shareable text summary of the current result, or null if there is nothing to share. */
+    fun shareSummary(): String? {
+        val analysis = _home.value.analysis ?: return null
+        val r = analysis.result
+        if (!r.cryDetected) return "«Γιατί Κλαίει;»: δεν ανιχνεύτηκε καθαρό κλάμα."
+        val top = r.topReason ?: return null
+        val sb = StringBuilder()
+        sb.append("«Γιατί Κλαίει;» — αποτέλεσμα\n")
+        sb.append("${top.emoji} ${top.displayName} (${(r.confidence * 100).roundToInt()}%)\n\n")
+        sb.append("Πιθανές αιτίες:\n")
+        r.scores.take(3).forEach {
+            sb.append("• ${it.reason.displayName}: ${(it.probability * 100).roundToInt()}%\n")
+        }
+        sb.append("\n${top.advice}")
+        return sb.toString()
+    }
+
+    fun saveProfile(name: String, birthMillis: Long?) {
+        viewModelScope.launch {
+            val p = BabyProfile(name = name.trim(), birthMillis = birthMillis)
+            repo.setProfile(p)
+            _profile.value = repo.getProfile()
+            _home.update { it.copy(message = "Το προφίλ αποθηκεύτηκε.") }
+        }
+    }
+
+    fun refreshData() {
+        viewModelScope.launch {
+            repo.refreshPersonalization()
+            _home.update { it.copy(message = "Ανανεώθηκε.") }
+        }
+    }
+
+    suspend fun exportReportHtml(): String = repo.exportReportHtml()
+
+    suspend fun exportBackupJson(): String = repo.exportBackupJson()
+
+    fun importBackup(json: String) {
+        viewModelScope.launch {
+            try {
+                val n = repo.importBackupJson(json)
+                _profile.value = repo.getProfile()
+                _home.update { it.copy(message = "Επαναφορά ολοκληρώθηκε ($n καταγραφές).") }
+            } catch (t: Throwable) {
+                _home.update { it.copy(message = "Σφάλμα επαναφοράς: ${t.message ?: "άκυρο αρχείο"}") }
+            }
+        }
+    }
+
     fun dismissResult() {
         _home.update { HomeUiState(phase = Phase.IDLE) }
     }
@@ -174,10 +240,9 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     suspend fun loadStats(): StatsSummary = repo.stats()
 
-    suspend fun exportCsv(): String = repo.exportCsv()
-
     override fun onCleared() {
         recorder.stop()
+        player.stop()
         super.onCleared()
     }
 

@@ -1,6 +1,6 @@
 package com.babycry.analyzer.ui
 
-import android.content.Intent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,39 +11,31 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.Divider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.babycry.analyzer.data.StatsSummary
-import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @Composable
 fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
     var stats by remember { mutableStateOf<StatsSummary?>(null) }
-    var refresh by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(refresh) { stats = viewModel.loadStats() }
+    LaunchedEffect(Unit) { stats = viewModel.loadStats() }
 
     Column(
         modifier = modifier
@@ -66,6 +58,7 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 MetricRow("Μηχανή", if (s.hasModel) "AI μοντέλο" else "Πρόχειρη εκτίμηση")
+                MetricRow("Καταγεγραμμένα κλάματα", s.totalCries.toString())
                 MetricRow("Επιβεβαιωμένες κρίσεις", s.confirmedCount.toString())
                 MetricRow(
                     "Ακρίβεια (από feedback)",
@@ -83,7 +76,35 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
+        Text("Κατανομή αιτιών", style = MaterialTheme.typography.titleLarge)
+        Spacer(Modifier.height(4.dp))
+        if (s.totalCries == 0) {
+            Text(
+                "Δεν υπάρχουν ακόμη καταγραφές.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+        } else {
+            Spacer(Modifier.height(8.dp))
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    val maxCount = (s.predictedDistribution.maxOrNull() ?: 0).coerceAtLeast(1)
+                    s.labels.forEachIndexed { i, reason ->
+                        val count = s.predictedDistribution.getOrElse(i) { 0 }
+                        val pct = 100 * count / s.totalCries.coerceAtLeast(1)
+                        DistributionBar(
+                            label = "${reason.emoji} ${reason.displayName}",
+                            value = "$count ($pct%)",
+                            fraction = count.toFloat() / maxCount,
+                        )
+                        if (i < s.labels.lastIndex) Spacer(Modifier.height(10.dp))
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
         Text("Ανάκληση ανά κατηγορία (recall)", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(8.dp))
         s.labels.forEachIndexed { i, reason ->
@@ -98,41 +119,37 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(8.dp))
         ConfusionMatrix(s)
 
-        Spacer(Modifier.height(20.dp))
-        Divider()
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Οι διορθώσεις σου τροφοδοτούν αυτά τα νούμερα. Διαχείριση δεδομένων στις Ρυθμίσεις.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
+    }
+}
 
-        Button(
-            onClick = {
-                scope.launch {
-                    val csv = viewModel.exportCsv()
-                    val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/csv"
-                        putExtra(Intent.EXTRA_SUBJECT, "Baby cry history")
-                        putExtra(Intent.EXTRA_TEXT, csv)
-                    }
-                    ctx.startActivity(Intent.createChooser(intent, "Εξαγωγή CSV"))
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Εξαγωγή ιστορικού (CSV)")
+@Composable
+private fun DistributionBar(label: String, value: String, fraction: Float) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
         }
-
-        Spacer(Modifier.height(8.dp))
-        OutlinedButton(
-            onClick = {
-                viewModel.resetPersonalization()
-                refresh++
-            },
-            modifier = Modifier.fillMaxWidth(),
+        Spacer(Modifier.height(4.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(18.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
-            Text("Μηδενισμός προσωποποίησης")
-        }
-
-        Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = { refresh++ }, modifier = Modifier.fillMaxWidth()) {
-            Text("Ανανέωση")
+            Box(
+                Modifier
+                    .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                    .height(18.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(MaterialTheme.colorScheme.primary),
+            )
         }
     }
 }
@@ -154,7 +171,6 @@ private fun MetricRow(label: String, value: String) {
 private fun ConfusionMatrix(s: StatsSummary) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
-            // Header
             Row(Modifier.fillMaxWidth()) {
                 Box(Modifier.weight(1.2f)) { Text("", style = MaterialTheme.typography.bodyMedium) }
                 s.labels.forEach { r ->

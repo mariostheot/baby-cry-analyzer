@@ -9,4 +9,12 @@
         <item name="android:windowBackground">@android:color/white</item>
     </style>
 
+    <!-- Branded splash shown at launch (core-splashscreen backports it below API 31).
+         installSplashScreen() swaps to the post-splash theme once the first frame is ready. -->
+    <style name="Theme.BabyCryAnalyzer.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.BabyCryAnalyzer</item>
+    </style>
+
 </resources>
