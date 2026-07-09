@@ -8,6 +8,13 @@ TFLite bundle -> parity sample. Every step is resumable-ish thanks to embedding 
 """
 from __future__ import annotations
 
+import os
+
+# Colab / TF 2.16+ default to Keras 3, but this pipeline targets Keras 2 (tf.keras
+# models, TFLite `from_keras_model`, Normalization weight layout). Force the legacy
+# Keras backend BEFORE TensorFlow gets imported anywhere downstream.
+os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
+
 import argparse
 from pathlib import Path
 

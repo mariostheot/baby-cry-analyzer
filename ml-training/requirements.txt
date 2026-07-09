@@ -3,6 +3,9 @@
 # the notebook keeps working as Colab updates its base image.
 
 tensorflow>=2.15,<2.17
+# Keras 2 backend: TF 2.16+ ships Keras 3 by default, but this pipeline needs Keras 2
+# (used together with the TF_USE_LEGACY_KERAS=1 flag set in src/main.py).
+tf-keras>=2.15,<2.17
 tensorflow-hub>=0.16
 numpy>=1.24
 scipy>=1.10
