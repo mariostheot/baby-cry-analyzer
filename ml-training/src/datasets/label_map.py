@@ -14,6 +14,7 @@ return ``None`` and are dropped from the reason-classification training set.
 """
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 # Canonical order (keep in sync with configs/default.yaml and CryReason.kt).
@@ -84,7 +85,15 @@ def to_canonical(source: str, raw_label: str) -> Optional[str]:
     if source == "kaggle_infant_cry":
         return _KAGGLE_8.get(key)
     if source == "infantcry_dbl":
-        return _DBL.get(key)
+        direct = _DBL.get(key)
+        if direct:
+            return direct
+        # Tolerant: folders may be named "Tier2_neh", "neh_hunger", "NEH", etc.
+        # Accept if any alphabetic token in the folder name is a known DBL code.
+        for tok in re.split(r"[^a-z]+", key):
+            if tok in _DBL:
+                return _DBL[tok]
+        return None
     # Sources without reason labels (esc50/cryceleb/babycry) never reach here for
     # the reason classifier; they are handled separately by the gate pipeline.
     return _DONATEACRY_FOLDER.get(key)  # fallback: accept already-canonical labels

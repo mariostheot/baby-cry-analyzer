@@ -100,7 +100,12 @@ def download_infantcry_dbl(data_dir: Path, doi: str) -> Optional[Path]:
     We derive ``<id>`` and ``<version>`` from the DOI (e.g. ``10.17632/x493z8nmwc.1``).
     """
     out = data_dir / "infantcry_dbl"
-    if out.exists() and any(out.rglob("*.wav")):
+    # Case-insensitive check: Linux globbing is case-sensitive, and the Mendeley
+    # WAVs may use ".WAV". If audio is already present (e.g. manually placed),
+    # treat it as cached instead of re-attempting the (often 403) auto-download.
+    if out.exists() and any(
+        p.is_file() and p.suffix.lower() == ".wav" for p in out.rglob("*")
+    ):
         _log("infantcry_dbl: cached")
         return out
     out.mkdir(parents=True, exist_ok=True)
