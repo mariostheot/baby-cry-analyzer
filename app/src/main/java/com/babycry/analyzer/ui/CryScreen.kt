@@ -84,8 +84,8 @@ fun HomeScreen(
         Spacer(Modifier.height(16.dp))
         Text(
             text = when (state.phase) {
-                Phase.IDLE -> "Πάτα για να ακούσω (έως 7 δευτ.)"
-                Phase.RECORDING -> "Ακούω... πάτα ξανά για διακοπή"
+                Phase.IDLE -> "Πάτα μία φορά — ακούω και σταματάω μόνο μου"
+                Phase.RECORDING -> "Ακούω... θα σταματήσω μόλις καταλάβω"
                 Phase.ANALYZING -> "Αναλύω..."
                 Phase.RESULT -> "Αποτέλεσμα"
             },

@@ -36,7 +36,10 @@ class AudioRecorder(private val sampleRate: Int = MfccExtractor.SAMPLE_RATE) {
     @SuppressLint("MissingPermission") // The caller is responsible for the RECORD_AUDIO grant.
     suspend fun record(
         maxDurationMs: Int,
+        minDurationMs: Int = 0,
+        evalIntervalMs: Int = 700,
         onLevel: (Float) -> Unit = {},
+        shouldFinish: suspend (FloatArray) -> Boolean = { false },
     ): FloatArray = withContext(Dispatchers.IO) {
         stopRequested.set(false)
 
@@ -48,8 +51,9 @@ class AudioRecorder(private val sampleRate: Int = MfccExtractor.SAMPLE_RATE) {
         if (minBufferBytes <= 0) {
             throw IllegalStateException("Το μικρόφωνο δεν υποστηρίζει τη ζητούμενη μορφή ήχου.")
         }
-        // Give the recorder ~1s of internal buffer to avoid overruns.
-        val bufferBytes = maxOf(minBufferBytes, sampleRate * 2)
+        // ~2s of internal buffer: the streaming `shouldFinish` analysis briefly pauses reads,
+        // and this headroom prevents mic overruns during that pause.
+        val bufferBytes = maxOf(minBufferBytes, sampleRate * 4)
 
         val recorder = AudioRecord(
             MediaRecorder.AudioSource.MIC,
@@ -72,10 +76,12 @@ class AudioRecorder(private val sampleRate: Int = MfccExtractor.SAMPLE_RATE) {
             recorder.startRecording()
             val startedAt = SystemClock.elapsedRealtime()
 
+            var lastEvalAt = 0L
             while (true) {
                 coroutineContext.ensureActive()
                 if (stopRequested.get()) break
-                if (SystemClock.elapsedRealtime() - startedAt >= maxDurationMs) break
+                val elapsed = SystemClock.elapsedRealtime() - startedAt
+                if (elapsed >= maxDurationMs) break
 
                 val read = recorder.read(chunk, 0, chunk.size)
                 if (read > 0) {
@@ -85,22 +91,36 @@ class AudioRecorder(private val sampleRate: Int = MfccExtractor.SAMPLE_RATE) {
                 } else if (read < 0) {
                     throw IllegalStateException("Σφάλμα ανάγνωσης από το μικρόφωνο (κωδικός $read).")
                 }
+
+                // Shazam-style auto-finish: once we have enough audio, periodically let the
+                // caller inspect what we've captured so far and stop early if it's confident.
+                if (elapsed >= minDurationMs &&
+                    SystemClock.elapsedRealtime() - lastEvalAt >= evalIntervalMs
+                ) {
+                    lastEvalAt = SystemClock.elapsedRealtime()
+                    if (shouldFinish(toFloat(chunks, totalSamples))) break
+                }
             }
 
             recorder.stop()
-
-            val out = FloatArray(totalSamples)
-            var idx = 0
-            for (c in chunks) {
-                for (s in c) {
-                    out[idx++] = s / 32768f
-                }
-            }
-            out
+            toFloat(chunks, totalSamples)
         } finally {
             isRecording = false
             recorder.release()
         }
+    }
+
+    /** Flattens captured 16-bit chunks into a normalized -1f..1f mono buffer. */
+    private fun toFloat(chunks: List<ShortArray>, total: Int): FloatArray {
+        val out = FloatArray(total)
+        var idx = 0
+        for (c in chunks) {
+            for (s in c) {
+                if (idx >= total) break
+                out[idx++] = s / 32768f
+            }
+        }
+        return out
     }
 
     private fun rmsLevel(buffer: ShortArray, length: Int): Float {

@@ -9,6 +9,7 @@ import com.babycry.analyzer.data.CryRepository
 import com.babycry.analyzer.data.FeedingEvent
 import com.babycry.analyzer.data.StatsSummary
 import com.babycry.analyzer.ml.CryAnalysis
+import com.babycry.analyzer.model.AnalysisEngine
 import com.babycry.analyzer.model.CryReason
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -74,9 +75,26 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
                 HomeUiState(phase = Phase.RECORDING, level = 0f)
             }
             val waveform = try {
-                recorder.record(maxDurationMs = MAX_RECORD_MS) { level ->
-                    _home.update { it.copy(level = level) }
-                }
+                recorder.record(
+                    maxDurationMs = MAX_RECORD_MS,
+                    minDurationMs = MIN_LISTEN_MS,
+                    onLevel = { level -> _home.update { it.copy(level = level) } },
+                    shouldFinish = { partial ->
+                        // Shazam-style: stop as soon as we're confident it's a cry. Context
+                        // priors are skipped here (they don't affect cry detection) to avoid a
+                        // DB hit on every probe; the final analysis below still applies them.
+                        val probe = repo.analyze(
+                            waveform = partial,
+                            personalizationEnabled = _personalizationEnabled.value,
+                            contextEnabled = false,
+                        )
+                        when {
+                            !probe.result.cryDetected -> false // no cry yet -> keep listening
+                            probe.result.engine == AnalysisEngine.HEURISTIC -> true // can't get surer
+                            else -> !probe.uncertain           // model: stop once confident
+                        }
+                    },
+                )
             } catch (t: Throwable) {
                 _home.update {
                     HomeUiState(phase = Phase.IDLE, message = t.message ?: "Σφάλμα ηχογράφησης")
@@ -165,5 +183,6 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     private companion object {
         const val MAX_RECORD_MS = 7000
+        const val MIN_LISTEN_MS = 2500 // capture at least this much before auto-finishing
     }
 }
