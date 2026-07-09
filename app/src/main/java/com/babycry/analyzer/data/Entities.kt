@@ -1,0 +1,45 @@
+package com.babycry.analyzer.data
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+/**
+ * One analyzed recording. [confirmedIndex] is filled in when the parent confirms or
+ * corrects the prediction; the pair (predictedIndex, confirmedIndex) drives the in-app
+ * accuracy stats and the personal confusion matrix.
+ */
+@Entity(tableName = "cry_events")
+data class CryEvent(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val timestamp: Long,
+    val cryDetected: Boolean,
+    val predictedIndex: Int,          // canonical class index, or -1 if no cry
+    val confirmedIndex: Int? = null,  // null until the parent gives feedback
+    val confidence: Float,
+    val engine: String,               // AnalysisEngine name
+    val gateScore: Float,
+)
+
+/**
+ * A user-confirmed example (YAMNet embedding + true label) kept on device to personalize
+ * predictions. Never leaves the phone.
+ */
+@Entity(tableName = "feedback_examples")
+data class FeedbackExample(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val timestamp: Long,
+    val labelIndex: Int,
+    val embedding: FloatArray,
+) {
+    // data class with an array field: override equality on identity to keep Room/data happy.
+    override fun equals(other: Any?): Boolean = this === other
+    override fun hashCode(): Int = id.hashCode()
+}
+
+/** A "fed now" marker used by the context prior (hours-since-feed -> hunger likelihood). */
+@Entity(tableName = "feeding_events")
+data class FeedingEvent(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val timestamp: Long,
+    val note: String? = null,
+)

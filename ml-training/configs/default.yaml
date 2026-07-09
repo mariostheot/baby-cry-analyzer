@@ -1,0 +1,70 @@
+# Baby Cry AI - training configuration.
+# Every dataset can be toggled on/off. Sources that need credentials are off by
+# default and can be enabled once you have provided the credentials (see README).
+
+seed: 42
+sample_rate: 16000
+
+# Canonical class order. MUST match the enum order in the Android app
+# (com.babycry.analyzer.model.CryReason) and the generated labels.txt.
+classes:
+  - hungry
+  - tired
+  - discomfort
+  - belly_pain
+  - burping
+
+paths:
+  data_dir: data
+  cache_dir: data/cache
+  artifacts_dir: artifacts
+
+datasets:
+  donateacry:
+    enabled: true
+  kaggle_infant_cry:
+    enabled: false            # set true once Kaggle API key is configured
+    kaggle_ref: "sanmithasadhish/infant-cry-dataset"
+  infantcry_dbl:
+    enabled: false            # Mendeley (CC BY 4.0); may require a manual download
+    mendeley_doi: "10.17632/x493z8nmwc.1"
+  esc50_negatives:
+    enabled: true             # non-cry sounds -> used only for the cry/no-cry gate
+  cryceleb:
+    enabled: false            # Hugging Face gated; representation/gate only (no reason labels)
+    hf_repo: "Ubenwa/CryCeleb2023"
+  babycry_ujm:
+    enabled: false            # Zenodo, very large; optional pretraining/gate only
+
+features:
+  yamnet_handle: "https://tfhub.dev/google/yamnet/1"
+  pooling: mean               # how frame embeddings are aggregated per clip
+  min_seconds: 0.5            # clips shorter than this are padded
+  max_seconds: 10.0           # clips longer than this are center-cropped
+
+augment:
+  enabled: true
+  target_per_class: 300       # oversample minority classes up to this many (via augmentation)
+  noise_snr_db: [5.0, 20.0]
+  pitch_semitones: [-2.0, 2.0]
+  time_stretch: [0.9, 1.1]
+  gain_db: [-3.0, 3.0]
+
+train:
+  hidden: [256, 128]
+  dropout: 0.3
+  l2: 0.0001
+  lr: 0.001
+  epochs: 100
+  batch_size: 32
+  cv_folds: 5
+  early_stopping_patience: 12
+  calibrate_temperature: true # fit a temperature on validation logits for honest confidences
+
+gate:
+  infant_cry_class_name: "Baby cry, infant cry"
+  threshold: 0.30             # min YAMNet infant-cry score to treat audio as a cry
+
+export:
+  quantize: true              # int8 dynamic-range quantization for the head
+  ondevice_training: true     # also export a training-enabled head (Tier 2 personalization)

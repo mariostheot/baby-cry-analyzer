@@ -1,0 +1,15 @@
+Put the trained model files here to bundle them inside the APK:
+
+  cry_reason.tflite
+  yamnet.tflite
+  labels.txt
+  cry_reason_trainable.tflite   (optional, enables on-device fine-tuning)
+
+You get these by training in Google Colab (see ../../../../ml-training/README.md):
+unzip artifacts/model_bundle.zip and copy the files into this folder, then rebuild.
+
+Alternatively (no rebuild needed), copy the same files onto the phone at:
+  Android/data/com.babycry.analyzer/files/models/
+
+If no models are found, the app still runs using a rough built-in heuristic.
+This placeholder file is harmless and can be deleted once you add real models.

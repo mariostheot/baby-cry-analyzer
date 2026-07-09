@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Host theme for the Compose Activity. Colors of the actual UI are driven by
+         Compose (Material 3); this platform theme mainly styles the window before
+         the first Compose frame is drawn. -->
+    <style name="Theme.BabyCryAnalyzer" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/ic_launcher_background</item>
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+
+</resources>
