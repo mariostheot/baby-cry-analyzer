@@ -26,7 +26,7 @@ datasets:
     enabled: false            # set true once Kaggle API key is configured
     kaggle_ref: "sanmithasadhish/infant-cry-dataset"
   infantcry_dbl:
-    enabled: false            # Mendeley (CC BY 4.0); may require a manual download
+    enabled: true             # Mendeley (CC BY 4.0), auto-downloads ~1,551 DBL clips
     mendeley_doi: "10.17632/x493z8nmwc.1"
   esc50_negatives:
     enabled: true             # non-cry sounds -> used only for the cry/no-cry gate

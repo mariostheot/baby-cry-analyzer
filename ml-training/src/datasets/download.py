@@ -93,21 +93,35 @@ def download_kaggle_infant_cry(data_dir: Path, kaggle_ref: str) -> Optional[Path
 
 
 def download_infantcry_dbl(data_dir: Path, doi: str) -> Optional[Path]:
-    """InfantCry-DBL (Mendeley Data, CC BY 4.0).
+    """InfantCry-DBL (Mendeley Data, CC BY 4.0): 1,551 clips in DBL categories.
 
-    Mendeley download links are per-version and sometimes require a browser. We try
-    the public API; if that fails we print manual instructions.
+    Mendeley caches a "download all" zip at a stable S3 URL of the form
+    ``prod-dcd-datasets-cache-zipfiles.s3.<region>.amazonaws.com/<id>-<version>.zip``.
+    We derive ``<id>`` and ``<version>`` from the DOI (e.g. ``10.17632/x493z8nmwc.1``).
     """
     out = data_dir / "infantcry_dbl"
     if out.exists() and any(out.rglob("*.wav")):
         _log("infantcry_dbl: cached")
         return out
     out.mkdir(parents=True, exist_ok=True)
+
+    ref = doi.rsplit("/", 1)[-1]           # "x493z8nmwc.1"
+    if "." in ref:
+        dataset_id, version = ref.rsplit(".", 1)
+    else:
+        dataset_id, version = ref, "1"
+
     zip_path = data_dir / "infantcry_dbl.zip"
-    # Mendeley public archive endpoint (version 1). May change; hence best-effort.
-    api = "https://data.mendeley.com/public-files/datasets/x493z8nmwc/files/archive"
-    if _download_file(api, zip_path) and _extract_zip(zip_path, out):
-        return out
+    urls = [
+        f"https://prod-dcd-datasets-cache-zipfiles.s3.eu-west-1.amazonaws.com/{dataset_id}-{version}.zip",
+        f"https://prod-dcd-datasets-cache-zipfiles.s3.amazonaws.com/{dataset_id}-{version}.zip",
+    ]
+    for url in urls:
+        zip_path.unlink(missing_ok=True)
+        if _download_file(url, zip_path) and _extract_zip(zip_path, out) and any(out.rglob("*.wav")):
+            zip_path.unlink(missing_ok=True)
+            return out
+
     _log(
         "infantcry_dbl: automatic download failed. Manually download the dataset from "
         f"https://doi.org/{doi} and unzip it into "

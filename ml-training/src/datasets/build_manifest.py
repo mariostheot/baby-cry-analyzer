@@ -87,5 +87,6 @@ def build_manifest(sources: dict[str, Optional[Path]], config: dict) -> pd.DataF
     df.to_csv(out, index=False)
     print(f"[manifest] {len(df)} clips -> {out}")
     print("[manifest] class distribution:\n" + df["label"].value_counts().to_string())
+    print("[manifest] per-source counts:\n" + df.groupby("source").size().to_string())
     print(f"[manifest] unique groups: {df['group_id'].nunique()}")
     return df
