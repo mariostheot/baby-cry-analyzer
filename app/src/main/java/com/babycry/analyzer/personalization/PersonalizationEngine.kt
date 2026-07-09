@@ -58,7 +58,8 @@ class PersonalizationEngine(
                 val e = ex.embedding
                 for (j in 0 until minOf(dim, e.size)) mean[j] += e[j]
             }
-            for (j in mean.indices) mean[j] /= items.size
+            val invCount = 1f / items.size
+            for (j in mean.indices) mean[j] *= invCount
             prototypes[cls] = l2normalize(mean)
         }
     }
