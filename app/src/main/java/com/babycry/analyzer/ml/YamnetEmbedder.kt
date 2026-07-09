@@ -2,6 +2,8 @@ package com.babycry.analyzer.ml
 
 import org.tensorflow.lite.Interpreter
 import java.io.Closeable
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
 
 /** YAMNet output: a pooled 1024-d embedding plus the infant-cry gate score (0f..1f). */
@@ -13,10 +15,12 @@ data class EmbeddingResult(
 /**
  * Runs the frozen YAMNet feature extractor on device.
  *
- * The model (converted from TF-Hub) takes a variable-length 16 kHz mono waveform and
- * returns per-frame scores (521 AudioSet classes) and per-frame embeddings (1024). We
- * mean-pool the embeddings over frames and read the peak "Baby cry, infant cry" score as
- * the gate. Output tensors are located by shape so we do not depend on their order.
+ * The exported `yamnet.tflite` (see ml-training `convert_yamnet`) takes a variable-length
+ * 16 kHz mono waveform and **pools frames internally**, returning STATIC outputs: a 1024-d
+ * embedding and a 1-element cry gate. Pooling inside the model matters: the raw YAMNet has a
+ * dynamic per-frame output dimension that does not propagate through the Flex ops on Android
+ * (reading it fails with "cannot fill a Java array ... Tensor of 0 bytes"). Static outputs
+ * sidestep that entirely, and the math matches the Python training path exactly.
  *
  * Requires the Flex runtime (`tensorflow-lite-select-tf-ops`) because YAMNet's STFT/mel
  * frontend uses a few ops that are not TFLite builtins.
@@ -30,57 +34,36 @@ class YamnetEmbedder(model: MappedByteBuffer) : Closeable {
         interpreter.resizeInput(0, intArrayOf(wave.size))
         interpreter.allocateTensors()
 
+        // Outputs are static: a 1024-element embedding and a 1-element gate. Identify each by
+        // its element count and read via direct ByteBuffers (rank-agnostic, and immune to the
+        // dynamic-shape propagation issue that broke the per-frame model).
         val outputs = HashMap<Int, Any>()
-        val shapes = ArrayList<IntArray>()
+        var embIdx = -1
+        var gateIdx = -1
         for (i in 0 until interpreter.outputTensorCount) {
-            val shape = interpreter.getOutputTensor(i).shape()
-            shapes.add(shape)
-            outputs[i] = allocate(shape)
+            val count = interpreter.getOutputTensor(i).shape().fold(1) { acc, d -> acc * d }
+            outputs[i] = ByteBuffer.allocateDirect(maxOf(count, 1) * 4)
+                .order(ByteOrder.nativeOrder())
+            if (count == EMBED_DIM) embIdx = i else gateIdx = i
         }
 
         interpreter.runForMultipleInputsOutputs(arrayOf<Any>(wave), outputs)
 
-        var embedding: FloatArray? = null
-        var gate = 0f
-        for (i in shapes.indices) {
-            val shape = shapes[i]
-            if (shape.size != 2) continue
-            @Suppress("UNCHECKED_CAST")
-            val frames = outputs[i] as Array<FloatArray>
-            when (shape[1]) {
-                EMBED_DIM -> embedding = meanPool(frames)
-                SCORE_DIM -> gate = peakGate(frames)
+        val embedding = FloatArray(EMBED_DIM)
+        if (embIdx >= 0) {
+            val buf = (outputs[embIdx] as ByteBuffer).also { it.rewind() }
+            var j = 0
+            while (j < EMBED_DIM && buf.remaining() >= 4) {
+                embedding[j] = buf.float
+                j++
             }
         }
-        val emb = embedding ?: FloatArray(EMBED_DIM)
-        return EmbeddingResult(emb, gate)
-    }
+        val gate = if (gateIdx >= 0) {
+            val buf = (outputs[gateIdx] as ByteBuffer).also { it.rewind() }
+            if (buf.remaining() >= 4) buf.float else 0f
+        } else 0f
 
-    private fun allocate(shape: IntArray): Any {
-        val frames = if (shape[0] > 0) shape[0] else 1
-        val dim = shape[1]
-        return Array(frames) { FloatArray(dim) }
-    }
-
-    private fun meanPool(frames: Array<FloatArray>): FloatArray {
-        if (frames.isEmpty()) return FloatArray(EMBED_DIM)
-        val out = FloatArray(frames[0].size)
-        for (frame in frames) {
-            for (j in frame.indices) out[j] += frame[j]
-        }
-        val n = frames.size.toFloat()
-        for (j in out.indices) out[j] /= n
-        return out
-    }
-
-    private fun peakGate(frames: Array<FloatArray>): Float {
-        var peak = 0f
-        for (frame in frames) {
-            if (INFANT_CRY_INDEX < frame.size) {
-                peak = maxOf(peak, frame[INFANT_CRY_INDEX])
-            }
-        }
-        return peak
+        return EmbeddingResult(embedding, gate)
     }
 
     private fun fitLength(waveform: FloatArray): FloatArray {
@@ -96,10 +79,6 @@ class YamnetEmbedder(model: MappedByteBuffer) : Closeable {
 
     companion object {
         const val EMBED_DIM = 1024
-        const val SCORE_DIM = 521
-
-        /** AudioSet index of "Baby cry, infant cry". */
-        const val INFANT_CRY_INDEX = 20
 
         private const val SAMPLE_RATE = 16000
         private const val MIN_SAMPLES = SAMPLE_RATE          // pad up to 1s

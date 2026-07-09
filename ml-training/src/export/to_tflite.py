@@ -29,18 +29,66 @@ def convert_head(model, out_path: Path, quantize: bool) -> None:
     print(f"[export] head -> {out_path} ({out_path.stat().st_size // 1024} KB)")
 
 
-def convert_yamnet(handle: str, out_path: Path) -> None:
+def convert_yamnet(
+    handle: str,
+    out_path: Path,
+    gate_class_name: str = "Baby cry, infant cry",
+) -> None:
+    """Export YAMNet as a self-contained feature extractor with STATIC output shapes.
+
+    The raw TF-Hub model returns per-frame tensors whose leading (frame) dimension is
+    dynamic. On Android that dynamic output does NOT propagate through the Flex ops, so
+    reading it fails at runtime ("cannot fill a Java array ... Tensor of 0 bytes"). We wrap
+    YAMNet so it mean-pools the frames INTERNALLY and returns a fixed 1024-d embedding plus
+    a scalar cry gate - i.e. static shapes that TFLite reads reliably on device. The math is
+    identical to the Python training path (same YAMNet, same mean-pool), so the trained head
+    needs no changes.
+    """
+    import csv
+
     import tensorflow as tf
     import tensorflow_hub as hub
 
-    saved_model_path = hub.resolve(handle)
-    conv = tf.lite.TFLiteConverter.from_saved_model(saved_model_path)
+    yamnet = hub.load(handle)
+
+    # Resolve the AudioSet index of the cry class from the model's own class map so the
+    # on-device gate matches what training used.
+    gate_index = 20  # standard YAMNet index for "Baby cry, infant cry"
+    try:
+        class_map_path = yamnet.class_map_path().numpy().decode("utf-8")
+        with open(class_map_path) as f:
+            for row in csv.DictReader(f):
+                if row["display_name"].strip() == gate_class_name:
+                    gate_index = int(row["index"])
+                    break
+    except Exception as exc:  # noqa: BLE001
+        print(f"[export] yamnet gate-index lookup failed ({exc}); using {gate_index}")
+
+    class PooledYamnet(tf.Module):
+        def __init__(self, model, idx: int):
+            super().__init__()
+            self.model = model
+            self.idx = idx
+
+        @tf.function(input_signature=[
+            tf.TensorSpec([None], tf.float32, name="waveform"),
+        ])
+        def __call__(self, waveform):
+            scores, embeddings, _ = self.model(waveform)
+            embedding = tf.reduce_mean(embeddings, axis=0)   # [1024] static
+            gate = tf.reduce_max(scores[:, self.idx])        # scalar
+            return {"embedding": embedding, "gate": tf.reshape(gate, [1])}
+
+    module = PooledYamnet(yamnet, gate_index)
+    concrete = module.__call__.get_concrete_function()
+    conv = tf.lite.TFLiteConverter.from_concrete_functions([concrete], module)
     conv.target_spec.supported_ops = [
         tf.lite.OpsSet.TFLITE_BUILTINS,
         tf.lite.OpsSet.SELECT_TF_OPS,
     ]
     out_path.write_bytes(conv.convert())
-    print(f"[export] yamnet -> {out_path} ({out_path.stat().st_size // 1024} KB)")
+    print(f"[export] yamnet (pooled, gate_index={gate_index}) -> {out_path} "
+          f"({out_path.stat().st_size // 1024} KB)")
 
 
 class _TrainableHead:
@@ -161,7 +209,11 @@ def export_all(result: dict, config: dict) -> Path:
     write_labels(result["classes"], bundle / "labels.txt")
 
     try:
-        convert_yamnet(config["features"]["yamnet_handle"], bundle / "yamnet.tflite")
+        convert_yamnet(
+            config["features"]["yamnet_handle"],
+            bundle / "yamnet.tflite",
+            gate_class_name=config["gate"]["infant_cry_class_name"],
+        )
     except Exception as exc:  # noqa: BLE001
         print(f"[export] YAMNet conversion failed ({exc}). "
               "You can instead ship a prebuilt yamnet.tflite (see README).")

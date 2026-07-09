@@ -29,6 +29,9 @@ def _tflite_embedding(model_path: Path, wave: np.ndarray) -> Optional[np.ndarray
         interp.invoke()
         for out in interp.get_output_details():
             arr = interp.get_tensor(out["index"])
+            # Pooled export: already a 1024-d vector. Legacy export: [frames, 1024].
+            if arr.ndim == 1 and arr.shape[-1] == 1024:
+                return arr
             if arr.ndim == 2 and arr.shape[-1] == 1024:
                 return arr.mean(axis=0)
     except Exception as exc:  # noqa: BLE001

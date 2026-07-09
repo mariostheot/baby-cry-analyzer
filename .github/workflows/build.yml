@@ -9,6 +9,10 @@ name: Build APK
 # Trained model: upload the Colab-produced `model_bundle.zip` once to a release tagged
 # "model" (asset name `model_bundle.zip`). The build then bakes the .tflite files into the
 # APK's assets. Without that release the APK still builds (app falls back to the heuristic).
+#
+# YAMNet: the feature extractor is (re)generated here from TF-Hub as a POOLED model with
+# static outputs, pinned to TF 2.16 to match the app's TFLite/Flex runtime. This overrides
+# whatever yamnet.tflite was in the bundle, so you don't need to re-run Colab to fix it.
 
 on:
   push:
@@ -67,6 +71,26 @@ jobs:
             echo "WARN: no 'model' release found -> building APK without bundled models."
           fi
           echo "assets now contains:"; ls -la app/src/main/assets || true
+
+      # Regenerate yamnet.tflite as a POOLED model with STATIC outputs. The raw per-frame
+      # YAMNet has a dynamic output dimension that does not survive the Flex ops on-device
+      # (reading it fails with "cannot fill a Java array ... Tensor of 0 bytes"). Pinning TF
+      # 2.16 keeps the Flex ops compatible with the app's select-tf-ops runtime. Non-fatal:
+      # if this fails the APK still builds with whatever yamnet.tflite the bundle provided.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Regenerate on-device YAMNet (pooled, static outputs)
+        continue-on-error: true
+        run: |
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet "tensorflow-cpu==2.16.*" "tensorflow-hub>=0.16" "tf-keras>=2.16,<2.17" "pyyaml>=6.0"
+          python ml-training/tools/export_yamnet.py \
+            --config ml-training/configs/default.yaml \
+            --out app/src/main/assets/yamnet.tflite
+          echo "regenerated yamnet.tflite:"; ls -la app/src/main/assets/yamnet.tflite
 
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
