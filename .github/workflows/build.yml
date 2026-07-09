@@ -5,6 +5,10 @@ name: Build APK
 #  1) Actions -> this run -> Artifacts -> "app-debug-apk" (zip, needs unzip).
 #  2) Repo -> Releases -> "latest" -> app-debug.apk (direct, tap to install on phone).
 # Use (2) to download straight onto the phone without USB/Drive/email.
+#
+# Trained model: upload the Colab-produced `model_bundle.zip` once to a release tagged
+# "model" (asset name `model_bundle.zip`). The build then bakes the .tflite files into the
+# APK's assets. Without that release the APK still builds (app falls back to the heuristic).
 
 on:
   push:
@@ -44,6 +48,25 @@ jobs:
       # intentionally not committed).
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.9
+
+      # Pull the trained model (uploaded once to the "model" release) into the APK assets,
+      # so the app ships with the model and you only ever download the APK. Non-fatal: if
+      # there is no "model" release yet, the app still builds and uses the heuristic.
+      - name: Bundle trained model into assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p app/src/main/assets
+          if gh release download model -p model_bundle.zip -O model_bundle.zip 2>/dev/null; then
+            unzip -o model_bundle.zip -d _bundle
+            for f in yamnet.tflite cry_reason.tflite cry_reason_trainable.tflite labels.txt; do
+              src="$(find _bundle -name "$f" | head -n1)"
+              if [ -n "$src" ]; then cp "$src" "app/src/main/assets/$f"; echo "embedded $f"; else echo "WARN: $f missing from bundle"; fi
+            done
+          else
+            echo "WARN: no 'model' release found -> building APK without bundled models."
+          fi
+          echo "assets now contains:"; ls -la app/src/main/assets || true
 
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
