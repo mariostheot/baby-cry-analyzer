@@ -1,8 +1,10 @@
 name: Build APK
 
 # Builds a debug APK in the cloud so you never need Android Studio locally.
-# After a run finishes: Actions -> this run -> Artifacts -> download "app-debug-apk",
-# unzip, copy app-debug.apk to your phone and install it (allow "unknown sources").
+# After a run finishes the APK is published two ways:
+#  1) Actions -> this run -> Artifacts -> "app-debug-apk" (zip, needs unzip).
+#  2) Repo -> Releases -> "latest" -> app-debug.apk (direct, tap to install on phone).
+# Use (2) to download straight onto the phone without USB/Drive/email.
 
 on:
   push:
@@ -10,7 +12,7 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -52,3 +54,15 @@ jobs:
           name: app-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      # Publish the APK as a "latest" GitHub Release asset so it can be downloaded
+      # directly on the phone (browser -> repo -> Releases), without USB/Drive/email.
+      - name: Publish APK to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create latest \
+            app/build/outputs/apk/debug/app-debug.apk \
+            --title "Latest debug APK" \
+            --notes "Auto-built from ${{ github.sha }}. Tap app-debug.apk to download and install on your phone."
