@@ -83,9 +83,12 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     // On-device inference. The app also runs without a bundled model (heuristic fallback).
-    // YAMNet's audio frontend needs the Flex (select TF ops) runtime.
-    implementation("org.tensorflow:tensorflow-lite:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.14.0")
+    // YAMNet's audio frontend needs the Flex (select TF ops) runtime. Keep this pinned to
+    // the SAME minor as the TensorFlow version that converts the model in ml-training
+    // (currently TF 2.16.x): Flex ops are version-sensitive, and a mismatch (e.g. a 2.16
+    // model on a 2.14 runtime) crashes natively the moment YAMNet runs.
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.16.1")
 
     // Local storage for feedback, cry history and feeding log.
     implementation("androidx.room:room-runtime:2.6.1")

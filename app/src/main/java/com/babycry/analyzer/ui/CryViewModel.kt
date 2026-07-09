@@ -84,14 +84,24 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
             _home.update { it.copy(phase = Phase.ANALYZING, level = 0f) }
-            val analysis = repo.analyze(
-                waveform = waveform,
-                personalizationEnabled = _personalizationEnabled.value,
-                contextEnabled = _contextEnabled.value,
-            )
-            val eventId = repo.saveEvent(analysis)
-            _home.update {
-                it.copy(phase = Phase.RESULT, analysis = analysis, eventId = eventId)
+            try {
+                val analysis = repo.analyze(
+                    waveform = waveform,
+                    personalizationEnabled = _personalizationEnabled.value,
+                    contextEnabled = _contextEnabled.value,
+                )
+                val eventId = repo.saveEvent(analysis)
+                _home.update {
+                    it.copy(phase = Phase.RESULT, analysis = analysis, eventId = eventId)
+                }
+            } catch (t: Throwable) {
+                // Never let an inference error kill the app: surface it and reset.
+                _home.update {
+                    HomeUiState(
+                        phase = Phase.IDLE,
+                        message = "Σφάλμα ανάλυσης: ${t.message ?: t.javaClass.simpleName}",
+                    )
+                }
             }
         }
     }
