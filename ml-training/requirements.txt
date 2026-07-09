@@ -7,6 +7,13 @@ tensorflow>=2.15,<2.17
 # (used together with the TF_USE_LEGACY_KERAS=1 flag set in src/main.py).
 tf-keras>=2.15,<2.17
 tensorflow-hub>=0.16
+
+# TF 2.16 imports JAX at load time (via tf.lite authoring) and pins ml_dtypes 0.3.x.
+# Colab preinstalls a much newer JAX (needs ml_dtypes>=0.5 and dropped xla_computation),
+# which makes `import tensorflow` crash. Pin a JAX/ml_dtypes matched to TF 2.16.
+jax==0.4.30
+jaxlib==0.4.30
+ml_dtypes==0.3.2
 numpy>=1.24
 scipy>=1.10
 scikit-learn>=1.3
