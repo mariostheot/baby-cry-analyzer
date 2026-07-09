@@ -108,6 +108,21 @@ def reason_code_from_donateacry_filename(filename: str) -> Optional[str]:
     return _DONATEACRY_CODE.get(parts[-1].lower())
 
 
+def group_id_from_dbl_filename(filename: str) -> str:
+    """Group id for InfantCry-DBL clips so the same infant never spans train/test.
+
+    Tier 2 files are ``<ID>_<Gender>_<class>.wav`` (e.g. ``1121_M_neh.wav``); we group
+    by the leading anonymised infant/clip ID so all clips of one baby stay together.
+    Tier 1 files are ``dunstan-<class>_<index>.wav`` with no infant identity, so each
+    clip becomes its own group (the source instructional videos do not disclose it).
+    """
+    stem = filename.rsplit(".", 1)[0]
+    if stem.lower().startswith("dunstan"):
+        return f"dbl:{stem}"
+    token = stem.split("_", 1)[0]
+    return f"dbl:{token or stem}"
+
+
 def instance_id_from_donateacry_filename(filename: str) -> Optional[str]:
     """The leading UUID identifies the app install (proxy for one baby/family).
 

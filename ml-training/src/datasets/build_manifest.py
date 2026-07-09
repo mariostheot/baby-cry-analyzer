@@ -32,9 +32,12 @@ def _rows_folder_per_class(root: Path, source: str) -> list[dict]:
         canonical = label_map.to_canonical(source, class_folder)
         if canonical is None:
             continue
-        group = label_map.instance_id_from_donateacry_filename(audio.name)
-        if not group:
-            group = f"{source}:{audio.stem}"  # conservative: clip is its own group
+        if source == "infantcry_dbl":
+            group = label_map.group_id_from_dbl_filename(audio.name)
+        else:
+            group = label_map.instance_id_from_donateacry_filename(audio.name)
+            if not group:
+                group = f"{source}:{audio.stem}"  # conservative: clip is its own group
         rows.append(
             {"path": str(audio), "label": canonical, "source": source, "group_id": group}
         )
