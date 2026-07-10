@@ -3,6 +3,7 @@ package com.babycry.analyzer
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -13,11 +14,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -32,6 +35,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,9 +55,16 @@ import com.babycry.analyzer.ui.HistoryScreen
 import com.babycry.analyzer.ui.HomeScreen
 import com.babycry.analyzer.ui.OnboardingScreen
 import com.babycry.analyzer.ui.ReportScreen
+import com.babycry.analyzer.ui.SafetyScreen
 import com.babycry.analyzer.ui.SettingsScreen
+import com.babycry.analyzer.ui.SootheScreen
 import com.babycry.analyzer.ui.StatsScreen
 import com.babycry.analyzer.ui.theme.BabyCryTheme
+import com.babycry.analyzer.notify.ConfirmReminder
+import com.babycry.analyzer.ui.i18n.LocalAppLang
+import com.babycry.analyzer.ui.i18n.currentAppLang
+import com.babycry.analyzer.ui.i18n.AppLang
+import com.babycry.analyzer.ui.i18n.tr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -80,12 +91,23 @@ private enum class Overlay(val title: String) {
     SETTINGS("Ρυθμίσεις"),
     ABOUT("Σχετικά"),
     REPORT("Αναφορά"),
+    SOOTHE("Ηρέμησε το μωρό"),
+    SAFETY("Πότε να ανησυχήσεις"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppRoot() {
     val viewModel: CryViewModel = viewModel()
+    val lang by viewModel.language.collectAsState()
+    CompositionLocalProvider(LocalAppLang provides lang) {
+        AppRootContent(viewModel)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppRootContent(viewModel: CryViewModel) {
     var tab by remember { mutableStateOf(Tab.HOME) }
     var overlay by remember { mutableStateOf<Overlay?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -102,7 +124,7 @@ private fun AppRoot() {
             viewModel.onListenTapped()
         } else {
             scope.launch {
-                snackbarHostState.showSnackbar("Χρειάζεται άδεια μικροφώνου για την ηχογράφηση.")
+                snackbarHostState.showSnackbar(tr("Χρειάζεται άδεια μικροφώνου για την ηχογράφηση."))
             }
         }
     }
@@ -118,7 +140,7 @@ private fun AppRoot() {
                         it.write(json.toByteArray())
                     }
                 }
-                snackbarHostState.showSnackbar("Το backup αποθηκεύτηκε.")
+                snackbarHostState.showSnackbar(tr("Το backup αποθηκεύτηκε."))
             }
         }
     }
@@ -138,6 +160,42 @@ private fun AppRoot() {
         }
     }
 
+    val datasetLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val count = withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        viewModel.writeDatasetZip(out)
+                    } ?: 0
+                }
+                snackbarHostState.showSnackbar(
+                    if (count > 0) datasetExportedMessage(count)
+                    else tr("Δεν υπάρχουν ακόμη επιβεβαιωμένες ηχογραφήσεις για εξαγωγή."),
+                )
+            }
+        }
+    }
+
+    // Android 13+ needs runtime consent before we can post the delayed "why did it cry?"
+    // reminder. If denied, the in-app banner still covers it.
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+
+    LaunchedEffect(onboardingDone) {
+        if (!onboardingDone) return@LaunchedEffect
+        ConfirmReminder.ensureChannel(context)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        viewModel.refreshPending()
+    }
+
     val onListen: () -> Unit = {
         val granted = ContextCompat.checkSelfPermission(
             context, Manifest.permission.RECORD_AUDIO
@@ -153,9 +211,9 @@ private fun AppRoot() {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_TEXT, text)
             }
-            context.startActivity(Intent.createChooser(intent, "Κοινοποίηση αποτελέσματος"))
+            context.startActivity(Intent.createChooser(intent, tr("Κοινοποίηση αποτελέσματος")))
         } else {
-            scope.launch { snackbarHostState.showSnackbar("Δεν υπάρχει αποτέλεσμα για κοινοποίηση.") }
+            scope.launch { snackbarHostState.showSnackbar(tr("Δεν υπάρχει αποτέλεσμα για κοινοποίηση.")) }
         }
     }
 
@@ -180,27 +238,37 @@ private fun AppRoot() {
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(overlay?.title ?: "Γιατί Κλαίει;") },
+                title = { Text(overlay?.let { tr(it.title) } ?: tr("Γιατί Κλαίει;")) },
                 navigationIcon = {
                     if (overlay != null) {
                         IconButton(onClick = { overlay = null }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Πίσω")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = tr("Πίσω"))
                         }
                     }
                 },
                 actions = {
                     if (overlay == null) {
                         IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "Μενού")
+                            Icon(Icons.Filled.MoreVert, contentDescription = tr("Μενού"))
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
-                                text = { Text("Ρυθμίσεις") },
+                                text = { Text(tr("Ηρέμησε το μωρό")) },
+                                leadingIcon = { Icon(Icons.Filled.MusicNote, contentDescription = null) },
+                                onClick = { menuOpen = false; overlay = Overlay.SOOTHE },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(tr("Πότε να ανησυχήσεις")) },
+                                leadingIcon = { Icon(Icons.Filled.HealthAndSafety, contentDescription = null) },
+                                onClick = { menuOpen = false; overlay = Overlay.SAFETY },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(tr("Ρυθμίσεις")) },
                                 leadingIcon = { Icon(Icons.Filled.Settings, contentDescription = null) },
                                 onClick = { menuOpen = false; overlay = Overlay.SETTINGS },
                             )
                             DropdownMenuItem(
-                                text = { Text("Σχετικά") },
+                                text = { Text(tr("Σχετικά")) },
                                 leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null) },
                                 onClick = { menuOpen = false; overlay = Overlay.ABOUT },
                             )
@@ -215,8 +283,8 @@ private fun AppRoot() {
                     NavigationBarItem(
                         selected = overlay == null && tab == entry,
                         onClick = { overlay = null; tab = entry },
-                        icon = { Icon(entry.icon, contentDescription = entry.label) },
-                        label = { Text(entry.label) },
+                        icon = { Icon(entry.icon, contentDescription = tr(entry.label)) },
+                        label = { Text(tr(entry.label)) },
                     )
                 }
             }
@@ -229,13 +297,28 @@ private fun AppRoot() {
                     onExportReport = { overlay = Overlay.REPORT },
                     onBackup = { backupLauncher.launch("baby-cry-backup.json") },
                     onRestore = { restoreLauncher.launch(arrayOf("application/json")) },
+                    onExportDataset = { datasetLauncher.launch("baby-cry-dataset.zip") },
                 )
                 overlay == Overlay.ABOUT -> AboutScreen()
                 overlay == Overlay.REPORT -> ReportScreen(viewModel)
-                tab == Tab.HOME -> HomeScreen(viewModel, onListen, onShareResult)
+                overlay == Overlay.SOOTHE -> SootheScreen(viewModel)
+                overlay == Overlay.SAFETY -> SafetyScreen()
+                tab == Tab.HOME -> HomeScreen(
+                    viewModel = viewModel,
+                    onListen = onListen,
+                    onShare = onShareResult,
+                    onCancel = { viewModel.cancelListening() },
+                    onSoothe = { overlay = Overlay.SOOTHE },
+                    onSafety = { overlay = Overlay.SAFETY },
+                )
                 tab == Tab.HISTORY -> HistoryScreen(viewModel)
                 tab == Tab.STATS -> StatsScreen(viewModel)
             }
         }
     }
+}
+
+private fun datasetExportedMessage(count: Int): String = when (currentAppLang) {
+    AppLang.EN -> "Exported $count recordings (+ labels.csv)."
+    AppLang.EL -> "Εξήχθησαν $count ηχογραφήσεις (+ labels.csv)."
 }

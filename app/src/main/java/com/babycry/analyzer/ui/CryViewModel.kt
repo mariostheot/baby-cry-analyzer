@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.babycry.analyzer.audio.AudioPlayer
 import com.babycry.analyzer.audio.AudioRecorder
+import com.babycry.analyzer.audio.SoothingPlayer
+import com.babycry.analyzer.audio.SoundType
 import com.babycry.analyzer.data.CryEvent
 import com.babycry.analyzer.data.CryRepository
 import com.babycry.analyzer.data.FeedingEvent
@@ -13,12 +15,19 @@ import com.babycry.analyzer.ml.CryAnalysis
 import com.babycry.analyzer.model.AnalysisEngine
 import com.babycry.analyzer.model.BabyProfile
 import com.babycry.analyzer.model.CryReason
+import com.babycry.analyzer.notify.ConfirmReminder
+import com.babycry.analyzer.ui.i18n.AppLang
+import com.babycry.analyzer.ui.i18n.currentAppLang
+import com.babycry.analyzer.ui.i18n.trS
+import java.io.OutputStream
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -33,12 +42,23 @@ data class HomeUiState(
     val message: String? = null,
 )
 
+/** State of the soothing-sounds player (null [playing] = stopped). */
+data class SoothingUiState(
+    val playing: SoundType? = null,
+    val remainingSec: Int = 0,
+)
+
 class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = CryRepository.get(app)
     private val recorder = AudioRecorder()
     private val player = AudioPlayer()
+    private val soother = SoothingPlayer()
+    private var soothingJob: Job? = null
     private var lastWaveform: FloatArray? = null
+
+    @Volatile
+    private var cancelRequested = false
 
     val labels: List<CryReason> get() = repo.labels
     val hasModel: Boolean get() = repo.hasModel
@@ -49,14 +69,27 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     private val _personalizationEnabled = MutableStateFlow(true)
     val personalizationEnabled: StateFlow<Boolean> = _personalizationEnabled.asStateFlow()
 
-    private val _contextEnabled = MutableStateFlow(true)
-    val contextEnabled: StateFlow<Boolean> = _contextEnabled.asStateFlow()
-
     private val _profile = MutableStateFlow(repo.getProfile())
     val profile: StateFlow<BabyProfile> = _profile.asStateFlow()
 
+    private val _profiles = MutableStateFlow(repo.getProfiles())
+    val profiles: StateFlow<List<BabyProfile>> = _profiles.asStateFlow()
+
+    private val _soothing = MutableStateFlow(SoothingUiState())
+    val soothing: StateFlow<SoothingUiState> = _soothing.asStateFlow()
+
     private val _onboardingComplete = MutableStateFlow(repo.isOnboardingComplete())
     val onboardingComplete: StateFlow<Boolean> = _onboardingComplete.asStateFlow()
+
+    // A past cry still awaiting the parent's "why did it cry?" confirmation.
+    private val _pending = MutableStateFlow<CryEvent?>(null)
+    val pendingConfirmation: StateFlow<CryEvent?> = _pending.asStateFlow()
+
+    private val _saveClips = MutableStateFlow(repo.isSaveClipsEnabled())
+    val saveClipsEnabled: StateFlow<Boolean> = _saveClips.asStateFlow()
+
+    private val _language = MutableStateFlow(repo.getLanguage())
+    val language: StateFlow<AppLang> = _language.asStateFlow()
 
     val canReplay: Boolean get() = lastWaveform != null
 
@@ -70,19 +103,38 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
+        currentAppLang = repo.getLanguage()
         viewModelScope.launch { repo.refreshPersonalization() }
+        refreshPending()
     }
 
-    /** Shazam-style: tap to start listening, tap again to stop early. */
+    /** Re-check whether there's a past cry waiting for the parent to confirm its reason. */
+    fun refreshPending() {
+        viewModelScope.launch { _pending.value = repo.pendingConfirmation() }
+    }
+
+    /**
+     * Shazam-style: tap the mic to start. There is no manual stop button - the analysis
+     * auto-finishes as soon as it's confident (or when the max listen time is reached).
+     */
     fun onListenTapped() {
         when (_home.value.phase) {
-            Phase.RECORDING -> recorder.stop()
             Phase.IDLE, Phase.RESULT -> startListening()
-            Phase.ANALYZING -> Unit
+            else -> Unit
+        }
+    }
+
+    /** Lets the user back out of an in-progress listen without analysing anything. */
+    fun cancelListening() {
+        if (_home.value.phase == Phase.RECORDING) {
+            cancelRequested = true
+            recorder.stop()
         }
     }
 
     private fun startListening() {
+        cancelRequested = false
+        stopSoothing() // don't let the soothing sound bleed into the recording
         viewModelScope.launch {
             _home.update {
                 HomeUiState(phase = Phase.RECORDING, level = 0f)
@@ -110,28 +162,50 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
                 )
             } catch (t: Throwable) {
                 _home.update {
-                    HomeUiState(phase = Phase.IDLE, message = t.message ?: "Σφάλμα ηχογράφησης")
+                    HomeUiState(phase = Phase.IDLE, message = t.message ?: trS("Σφάλμα ηχογράφησης"))
                 }
                 return@launch
             }
+
+            // User backed out mid-listen: drop the clip and go quietly back to idle.
+            if (cancelRequested) {
+                cancelRequested = false
+                _home.update { HomeUiState(phase = Phase.IDLE) }
+                return@launch
+            }
+
             lastWaveform = waveform
             _home.update { it.copy(phase = Phase.ANALYZING, level = 0f) }
             try {
                 val analysis = repo.analyze(
                     waveform = waveform,
                     personalizationEnabled = _personalizationEnabled.value,
-                    contextEnabled = _contextEnabled.value,
+                    contextEnabled = true,
                 )
-                val eventId = repo.saveEvent(analysis)
+                val eventId = repo.saveEvent(analysis, waveform)
+                val noCry = !analysis.result.cryDetected
                 _home.update {
-                    it.copy(phase = Phase.RESULT, analysis = analysis, eventId = eventId)
+                    it.copy(
+                        phase = Phase.RESULT,
+                        analysis = analysis,
+                        eventId = eventId,
+                        message = if (noCry) {
+                            trS("Άκουσα αλλά δεν ξεχώρισα καθαρό κλάμα. Δοκίμασε ξανά, πιο κοντά στο μωρό ή σε πιο ήσυχο χώρο.")
+                        } else null,
+                    )
+                }
+                // We don't pester for a reason right now (the parent rarely knows yet). Instead
+                // we remember this cry and remind them in a few minutes to confirm the real cause.
+                if (!noCry) {
+                    _pending.value = repo.pendingConfirmation()
+                    ConfirmReminder.schedule(getApplication<Application>(), REMINDER_DELAY_MIN)
                 }
             } catch (t: Throwable) {
                 // Never let an inference error kill the app: surface it and reset.
                 _home.update {
                     HomeUiState(
                         phase = Phase.IDLE,
-                        message = "Σφάλμα ανάλυσης: ${t.message ?: t.javaClass.simpleName}",
+                        message = "${trS("Σφάλμα ανάλυσης:")} ${t.message ?: t.javaClass.simpleName}",
                     )
                 }
             }
@@ -152,14 +226,54 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         val embedding = state.analysis?.embedding
         viewModelScope.launch {
             repo.confirm(eventId, reason, embedding)
-            _home.update { it.copy(feedbackGiven = true, message = "Ευχαριστώ! Θα μάθω από αυτό.") }
+            if (_pending.value?.id == eventId) _pending.value = null
+            ConfirmReminder.cancel(getApplication<Application>())
+            _home.update { it.copy(feedbackGiven = true, message = trS("Ευχαριστώ! Θα μάθω από αυτό.")) }
         }
     }
+
+    /** Confirm/correct the reason for the pending (previous) cry, from the home banner. */
+    fun confirmPending(reason: CryReason) {
+        val id = _pending.value?.id ?: return
+        viewModelScope.launch {
+            repo.setReason(id, reason)
+            _pending.value = null
+            ConfirmReminder.cancel(getApplication<Application>())
+            _home.update {
+                it.copy(message = recordedMessage(reason))
+            }
+        }
+    }
+
+    /** "Not sure yet" - stop asking for now (still editable later from History). */
+    fun dismissPending() {
+        repo.dismissPending()
+        _pending.value = null
+        ConfirmReminder.cancel(getApplication<Application>())
+    }
+
+    /** Set/correct the reason of any past cry (from History). */
+    fun setReasonForEvent(eventId: Long, reason: CryReason) {
+        viewModelScope.launch {
+            repo.setReason(eventId, reason)
+            if (_pending.value?.id == eventId) _pending.value = null
+            _home.update { it.copy(message = trS("Ενημερώθηκε η αιτία.")) }
+        }
+    }
+
+    fun setSaveClips(enabled: Boolean) {
+        repo.setSaveClips(enabled)
+        _saveClips.value = enabled
+    }
+
+    suspend fun datasetInfo(): Pair<Int, Long> = repo.datasetInfo()
+
+    suspend fun writeDatasetZip(out: OutputStream): Int = repo.writeDatasetZip(out)
 
     fun logFeeding() {
         viewModelScope.launch {
             repo.logFeeding()
-            _home.update { it.copy(message = "Καταγράφηκε το τάισμα.") }
+            _home.update { it.copy(message = trS("Καταγράφηκε το τάισμα.")) }
         }
     }
 
@@ -173,34 +287,90 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     fun shareSummary(): String? {
         val analysis = _home.value.analysis ?: return null
         val r = analysis.result
-        if (!r.cryDetected) return "«Γιατί Κλαίει;»: δεν ανιχνεύτηκε καθαρό κλάμα."
+        if (!r.cryDetected) return trS("«Γιατί Κλαίει;»: δεν ανιχνεύτηκε καθαρό κλάμα.")
         val top = r.topReason ?: return null
         val sb = StringBuilder()
-        sb.append("«Γιατί Κλαίει;» — αποτέλεσμα\n")
-        sb.append("${top.emoji} ${top.displayName} (${(r.confidence * 100).roundToInt()}%)\n\n")
-        sb.append("Πιθανές αιτίες:\n")
+        sb.append(trS("«Γιατί Κλαίει;» — αποτέλεσμα")).append("\n")
+        sb.append("${top.emoji} ${trS(top.displayName)} (${(r.confidence * 100).roundToInt()}%)\n\n")
+        sb.append(trS("Πιθανές αιτίες:")).append("\n")
         r.scores.take(3).forEach {
-            sb.append("• ${it.reason.displayName}: ${(it.probability * 100).roundToInt()}%\n")
+            sb.append("• ${trS(it.reason.displayName)}: ${(it.probability * 100).roundToInt()}%\n")
         }
-        sb.append("\n${top.advice}")
+        sb.append("\n${trS(top.advice)}")
         return sb.toString()
+    }
+
+    // ---- Soothing sounds -----------------------------------------------------
+
+    /** Start a soothing sound; [minutes] == 0 means play until stopped. */
+    fun playSoothing(type: SoundType, minutes: Int) {
+        soothingJob?.cancel()
+        soother.start(type)
+        _soothing.value = SoothingUiState(playing = type, remainingSec = minutes * 60)
+        if (minutes > 0) {
+            soothingJob = viewModelScope.launch {
+                var left = minutes * 60
+                while (left > 0 && _soothing.value.playing == type) {
+                    delay(1000)
+                    left--
+                    _soothing.update { if (it.playing == type) it.copy(remainingSec = left) else it }
+                }
+                if (_soothing.value.playing == type) stopSoothing()
+            }
+        }
+    }
+
+    fun stopSoothing() {
+        soothingJob?.cancel()
+        soothingJob = null
+        soother.stop()
+        _soothing.value = SoothingUiState()
+    }
+
+    // ---- Baby profiles (multi-baby) ------------------------------------------
+
+    private fun refreshProfiles() {
+        _profiles.value = repo.getProfiles()
+        _profile.value = repo.getProfile()
+    }
+
+    /** Add a new (blank) baby and make it active; the parent fills details in Settings. */
+    fun addBaby() {
+        viewModelScope.launch {
+            repo.addProfile("", null)
+            refreshProfiles()
+            _home.update { it.copy(message = trS("Συμπλήρωσε τα στοιχεία του νέου μωρού.")) }
+        }
+    }
+
+    fun selectBaby(id: String) {
+        viewModelScope.launch {
+            repo.setActiveProfile(id)
+            refreshProfiles()
+        }
+    }
+
+    fun deleteBaby(id: String) {
+        viewModelScope.launch {
+            repo.deleteProfile(id)
+            refreshProfiles()
+        }
     }
 
     fun saveProfile(name: String, birthMillis: Long?) {
         viewModelScope.launch {
-            val p = BabyProfile(name = name.trim(), birthMillis = birthMillis)
-            repo.setProfile(p)
-            _profile.value = repo.getProfile()
-            _home.update { it.copy(message = "Το προφίλ αποθηκεύτηκε.") }
+            repo.updateActiveProfile(name.trim(), birthMillis)
+            refreshProfiles()
+            _home.update { it.copy(message = trS("Το προφίλ αποθηκεύτηκε.")) }
         }
     }
 
     /** First-run: save the baby profile and never show the welcome screen again. */
     fun completeOnboarding(name: String, birthMillis: Long?) {
         viewModelScope.launch {
-            repo.setProfile(BabyProfile(name = name.trim(), birthMillis = birthMillis))
+            repo.addProfile(name.trim(), birthMillis)
             repo.setOnboardingComplete()
-            _profile.value = repo.getProfile()
+            refreshProfiles()
             _onboardingComplete.value = true
         }
     }
@@ -213,14 +383,18 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     fun clearHistory() {
         viewModelScope.launch {
             repo.clearHistory()
-            _home.update { it.copy(message = "Το ιστορικό & τα στατιστικά μηδενίστηκαν.") }
+            _home.update { it.copy(message = trS("Το ιστορικό & τα στατιστικά μηδενίστηκαν.")) }
         }
+    }
+
+    fun deleteEvent(id: Long) {
+        viewModelScope.launch { repo.deleteEvent(id) }
     }
 
     fun refreshData() {
         viewModelScope.launch {
             repo.refreshPersonalization()
-            _home.update { it.copy(message = "Ανανεώθηκε.") }
+            _home.update { it.copy(message = trS("Ανανεώθηκε.")) }
         }
     }
 
@@ -232,10 +406,12 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 val n = repo.importBackupJson(json)
-                _profile.value = repo.getProfile()
-                _home.update { it.copy(message = "Επαναφορά ολοκληρώθηκε ($n καταγραφές).") }
+                refreshProfiles()
+                _home.update { it.copy(message = restoreCompleteMessage(n)) }
             } catch (t: Throwable) {
-                _home.update { it.copy(message = "Σφάλμα επαναφοράς: ${t.message ?: "άκυρο αρχείο"}") }
+                _home.update {
+                    it.copy(message = "${trS("Σφάλμα επαναφοράς:")} ${t.message ?: trS("άκυρο αρχείο")}")
+                }
             }
         }
     }
@@ -252,15 +428,16 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         _personalizationEnabled.value = enabled
     }
 
-    fun setContext(enabled: Boolean) {
-        _contextEnabled.value = enabled
-    }
-
     fun resetPersonalization() {
         viewModelScope.launch {
             repo.resetPersonalization()
-            _home.update { it.copy(message = "Η προσωποποίηση μηδενίστηκε.") }
+            _home.update { it.copy(message = trS("Η προσωποποίηση μηδενίστηκε.")) }
         }
+    }
+
+    fun setLanguage(lang: AppLang) {
+        repo.setLanguage(lang)
+        _language.value = lang
     }
 
     suspend fun loadStats(): StatsSummary = repo.stats()
@@ -268,11 +445,23 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         recorder.stop()
         player.stop()
+        soother.stop()
         super.onCleared()
     }
 
     private companion object {
         const val MAX_RECORD_MS = 7000
         const val MIN_LISTEN_MS = 2500 // capture at least this much before auto-finishing
+        const val REMINDER_DELAY_MIN = 4L // ask "why did it cry?" a few minutes later
+
+        private fun recordedMessage(reason: CryReason): String = when (currentAppLang) {
+            AppLang.EN -> "Recorded: ${trS(reason.displayName)}. Thanks!"
+            AppLang.EL -> "Καταγράφηκε: ${reason.displayName}. Ευχαριστώ!"
+        }
+
+        private fun restoreCompleteMessage(n: Int): String = when (currentAppLang) {
+            AppLang.EN -> "Restore complete ($n records)."
+            AppLang.EL -> "Επαναφορά ολοκληρώθηκε ($n καταγραφές)."
+        }
     }
 }

@@ -13,8 +13,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Refresh
@@ -28,14 +31,17 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +51,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
+import com.babycry.analyzer.ui.i18n.AppLang
+import com.babycry.analyzer.ui.i18n.currentAppLang
+import com.babycry.analyzer.ui.i18n.tr
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -58,20 +67,29 @@ fun SettingsScreen(
     onExportReport: () -> Unit,
     onBackup: () -> Unit,
     onRestore: () -> Unit,
+    onExportDataset: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val profile by viewModel.profile.collectAsState()
+    val profiles by viewModel.profiles.collectAsState()
     val personalization by viewModel.personalizationEnabled.collectAsState()
-    val context by viewModel.contextEnabled.collectAsState()
+    val saveClips by viewModel.saveClipsEnabled.collectAsState()
+    val language by viewModel.language.collectAsState()
     val focus = LocalFocusManager.current
+
+    var dataset by remember { mutableStateOf<Pair<Int, Long>?>(null) }
+    LaunchedEffect(saveClips) { dataset = viewModel.datasetInfo() }
 
     var name by remember(profile) { mutableStateOf(profile.name) }
     var birth by remember(profile) { mutableStateOf(profile.birthMillis) }
     var showPicker by remember { mutableStateOf(false) }
     var justSaved by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<Confirm?>(null) }
+    var deleteBabyId by remember { mutableStateOf<String?>(null) }
 
-    val dateFmt = remember { SimpleDateFormat("dd/MM/yyyy", Locale("el")) }
+    val dateFmt = remember(currentAppLang) {
+        SimpleDateFormat("dd/MM/yyyy", if (currentAppLang == AppLang.EN) Locale.ENGLISH else Locale("el"))
+    }
 
     Column(
         modifier = modifier
@@ -80,19 +98,98 @@ fun SettingsScreen(
             .padding(16.dp),
     ) {
         Text(
-            "Ρυθμίσεις",
+            tr("Ρυθμίσεις"),
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(vertical = 12.dp),
         )
 
-        // ---- Baby profile ----
-        SectionTitle("Το μωρό μου")
+        // ---- Language ----
+        SectionTitle(tr("Γλώσσα"))
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(8.dp)) {
+                listOf(AppLang.EL to "Ελληνικά", AppLang.EN to "English").forEach { (lang, label) ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.setLanguage(lang) }
+                            .padding(vertical = 4.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = language == lang,
+                            onClick = { viewModel.setLanguage(lang) },
+                        )
+                        Spacer(Modifier.size(4.dp))
+                        Text(label, style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // ---- Babies (multi-profile) ----
+        SectionTitle(tr("Μωρά"))
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(8.dp)) {
+                if (profiles.isEmpty()) {
+                    Text(
+                        tr("Δεν έχει προστεθεί μωρό ακόμη."),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+                profiles.forEach { p ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.selectBaby(p.id) }
+                            .padding(vertical = 4.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = p.id == profile.id,
+                            onClick = { viewModel.selectBaby(p.id) },
+                        )
+                        Spacer(Modifier.size(4.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                p.name.ifBlank { tr("Χωρίς όνομα") },
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            Text(
+                                p.birthMillis?.let { dateFmt.format(Date(it)) } ?: tr("Χωρίς ημ. γέννησης"),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            )
+                        }
+                        if (profiles.size > 1) {
+                            IconButton(onClick = { deleteBabyId = p.id }) {
+                                Icon(Icons.Filled.DeleteOutline, contentDescription = tr("Διαγραφή μωρού"))
+                            }
+                        }
+                    }
+                }
+                Divider(Modifier.padding(vertical = 4.dp))
+                TextButton(onClick = { viewModel.addBaby() }, modifier = Modifier.padding(start = 4.dp)) {
+                    Icon(Icons.Filled.Add, contentDescription = null)
+                    Spacer(Modifier.size(6.dp))
+                    Text(tr("Προσθήκη μωρού"))
+                }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // ---- Active baby details ----
+        SectionTitle(tr("Στοιχεία ενεργού μωρού"))
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it; justSaved = false },
-                    label = { Text("Όνομα") },
+                    label = { Text(tr("Όνομα")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -103,14 +200,14 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Ημ. γέννησης", style = MaterialTheme.typography.bodyLarge)
+                        Text(tr("Ημ. γέννησης"), style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            birth?.let { dateFmt.format(Date(it)) } ?: "Δεν έχει οριστεί",
+                            birth?.let { dateFmt.format(Date(it)) } ?: tr("Δεν έχει οριστεί"),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         )
                     }
-                    OutlinedButton(onClick = { showPicker = true }) { Text("Επιλογή") }
+                    OutlinedButton(onClick = { showPicker = true }) { Text(tr("Επιλογή")) }
                 }
                 Spacer(Modifier.height(12.dp))
                 Button(
@@ -120,7 +217,7 @@ fun SettingsScreen(
                         justSaved = true
                     },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Αποθήκευση προφίλ") }
+                ) { Text(tr("Αποθήκευση προφίλ")) }
                 if (justSaved) {
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -131,7 +228,7 @@ fun SettingsScreen(
                         )
                         Spacer(Modifier.size(6.dp))
                         Text(
-                            "Αποθηκεύτηκε",
+                            tr("Αποθηκεύτηκε"),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -143,21 +240,20 @@ fun SettingsScreen(
         Spacer(Modifier.height(20.dp))
 
         // ---- Analysis toggles ----
-        SectionTitle("Ανάλυση")
+        SectionTitle(tr("Ανάλυση"))
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 ToggleRow(
-                    title = "Μαθαίνει από εσένα",
-                    subtitle = "Χρησιμοποιεί τις διορθώσεις σου (προσωποποίηση)",
+                    title = tr("Μαθαίνει από εσένα"),
+                    subtitle = tr("Χρησιμοποιεί τις διορθώσεις σου (προσωποποίηση)"),
                     checked = personalization,
                     onCheckedChange = viewModel::setPersonalization,
                 )
                 Spacer(Modifier.height(12.dp))
-                ToggleRow(
-                    title = "Πλαίσιο (τάισμα/ώρα/ηλικία)",
-                    subtitle = "Σταθμίζει με βάση τελευταία σίτιση, ώρα και ηλικία",
-                    checked = context,
-                    onCheckedChange = viewModel::setContext,
+                Text(
+                    tr("Η εφαρμογή λαμβάνει πάντα υπόψη το τελευταίο τάισμα, την ώρα και την ηλικία του μωρού για πιο ακριβή εκτίμηση."),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
             }
         }
@@ -165,27 +261,27 @@ fun SettingsScreen(
         Spacer(Modifier.height(20.dp))
 
         // ---- Data ----
-        SectionTitle("Δεδομένα")
+        SectionTitle(tr("Δεδομένα"))
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 ActionRow(
                     Icons.Filled.Description,
-                    "Προβολή / Εξαγωγή αναφοράς",
-                    "Ανοίγει μια όμορφη αναφορά· από εκεί την αποθηκεύεις ή τη μοιράζεσαι ως PDF",
+                    tr("Προβολή / Εξαγωγή αναφοράς"),
+                    tr("Ανοίγει μια όμορφη αναφορά· από εκεί την αποθηκεύεις ή τη μοιράζεσαι ως PDF"),
                     onExportReport,
                 )
                 Divider(Modifier.padding(vertical = 4.dp))
                 ActionRow(
                     Icons.Filled.Backup,
-                    "Δημιουργία backup",
-                    "Αποθήκευση όλων των δεδομένων σε αρχείο",
+                    tr("Δημιουργία backup"),
+                    tr("Αποθήκευση όλων των δεδομένων σε αρχείο"),
                     onBackup,
                 )
                 Divider(Modifier.padding(vertical = 4.dp))
                 ActionRow(
                     Icons.Filled.Restore,
-                    "Επαναφορά από backup",
-                    "Φόρτωση δεδομένων από αρχείο",
+                    tr("Επαναφορά από backup"),
+                    tr("Φόρτωση δεδομένων από αρχείο"),
                     onRestore,
                 )
             }
@@ -193,21 +289,49 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(20.dp))
 
+        // ---- Personal dataset ----
+        SectionTitle(tr("Δικό μου dataset"))
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                ToggleRow(
+                    title = tr("Αποθήκευση ηχογραφήσεων"),
+                    subtitle = tr("Κρατά τοπικά κάθε κλάμα μαζί με την αιτία, για να χτίσεις δικό σου dataset."),
+                    checked = saveClips,
+                    onCheckedChange = viewModel::setSaveClips,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    dataset?.let { (n, bytes) -> datasetInfoText(n, bytes) } ?: tr("Υπολογισμός..."),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+                Divider(Modifier.padding(vertical = 8.dp))
+                ActionRow(
+                    Icons.Filled.Archive,
+                    tr("Εξαγωγή dataset (zip)"),
+                    tr("Εξάγει τις επιβεβαιωμένες ηχογραφήσεις + labels.csv για εκπαίδευση. Μένουν στη συσκευή σου."),
+                    onExportDataset,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
         // ---- Personalization maintenance ----
-        SectionTitle("Προσωποποίηση (τι έμαθε από εσένα)")
+        SectionTitle(tr("Προσωποποίηση (τι έμαθε από εσένα)"))
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 ActionRow(
                     Icons.Filled.Refresh,
-                    "Ανανέωση προσωποποίησης",
-                    "Ξαναϋπολογίζει όσα έμαθε από τις διορθώσεις σου. Δεν σβήνει τίποτα.",
+                    tr("Ανανέωση προσωποποίησης"),
+                    tr("Ξαναϋπολογίζει όσα έμαθε από τις διορθώσεις σου. Δεν σβήνει τίποτα."),
                     { viewModel.refreshData() },
                 )
                 Divider(Modifier.padding(vertical = 4.dp))
                 ActionRow(
                     Icons.Filled.RestartAlt,
-                    "Μηδενισμός προσωποποίησης",
-                    "Ξεχνά όσα έμαθε από εσένα. Το ιστορικό & τα στατιστικά ΔΕΝ σβήνονται.",
+                    tr("Μηδενισμός προσωποποίησης"),
+                    tr("Ξεχνά όσα έμαθε από εσένα. Το ιστορικό & τα στατιστικά ΔΕΝ σβήνονται."),
                     { confirm = Confirm.RESET_PERSONALIZATION },
                 )
             }
@@ -216,13 +340,13 @@ fun SettingsScreen(
         Spacer(Modifier.height(20.dp))
 
         // ---- History / stats ----
-        SectionTitle("Ιστορικό & στατιστικά")
+        SectionTitle(tr("Ιστορικό & στατιστικά"))
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 ActionRow(
                     Icons.Filled.DeleteSweep,
-                    "Καθαρισμός ιστορικού & στατιστικών",
-                    "Μηδενίζει τα καταγεγραμμένα κλάματα, τα γραφήματα και τα ταΐσματα. Η εκμάθηση παραμένει.",
+                    tr("Καθαρισμός ιστορικού & στατιστικών"),
+                    tr("Μηδενίζει τα καταγεγραμμένα κλάματα, τα γραφήματα και τα ταΐσματα. Η εκμάθηση παραμένει."),
                     { confirm = Confirm.CLEAR_HISTORY },
                 )
             }
@@ -245,7 +369,7 @@ fun SettingsScreen(
                 }) { Text("OK") }
             },
             dismissButton = {
-                TextButton(onClick = { showPicker = false }) { Text("Άκυρο") }
+                TextButton(onClick = { showPicker = false }) { Text(tr("Άκυρο")) }
             },
         ) {
             DatePicker(state = state)
@@ -255,13 +379,11 @@ fun SettingsScreen(
     confirm?.let { action ->
         val (title, body) = when (action) {
             Confirm.RESET_PERSONALIZATION ->
-                "Μηδενισμός προσωποποίησης;" to
-                    "Το μοντέλο θα ξεχάσει όσα έμαθε από τις διορθώσεις σου και θα " +
-                    "επιστρέψει στη βασική του κατάσταση. Το ιστορικό & τα στατιστικά μένουν."
+                tr("Μηδενισμός προσωποποίησης;") to
+                    tr("Το μοντέλο θα ξεχάσει όσα έμαθε από τις διορθώσεις σου και θα επιστρέψει στη βασική του κατάσταση. Το ιστορικό & τα στατιστικά μένουν.")
             Confirm.CLEAR_HISTORY ->
-                "Καθαρισμός ιστορικού;" to
-                    "Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα, τα γραφήματα και τα " +
-                    "ταΐσματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται."
+                tr("Καθαρισμός ιστορικού;") to
+                    tr("Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα, τα γραφήματα και τα ταΐσματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται.")
         }
         AlertDialog(
             onDismissRequest = { confirm = null },
@@ -274,13 +396,50 @@ fun SettingsScreen(
                         Confirm.CLEAR_HISTORY -> viewModel.clearHistory()
                     }
                     confirm = null
-                }) { Text("Ναι") }
+                }) { Text(tr("Ναι")) }
             },
             dismissButton = {
-                TextButton(onClick = { confirm = null }) { Text("Άκυρο") }
+                TextButton(onClick = { confirm = null }) { Text(tr("Άκυρο")) }
             },
         )
     }
+
+    deleteBabyId?.let { id ->
+        val p = profiles.firstOrNull { it.id == id }
+        val who = p?.name?.takeIf { it.isNotBlank() }?.let { " «$it»" } ?: ""
+        AlertDialog(
+            onDismissRequest = { deleteBabyId = null },
+            title = { Text(tr("Διαγραφή μωρού;")) },
+            text = {
+                Text(deleteBabyMessage(who))
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteBaby(id)
+                    deleteBabyId = null
+                }) { Text(tr("Διαγραφή")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteBabyId = null }) { Text(tr("Άκυρο")) }
+            },
+        )
+    }
+}
+
+private fun datasetInfoText(n: Int, bytes: Long): String = when (currentAppLang) {
+    AppLang.EN -> "Stored: $n recordings • ${formatBytes(bytes)}"
+    AppLang.EL -> "Αποθηκευμένα: $n ηχογραφήσεις • ${formatBytes(bytes)}"
+}
+
+private fun deleteBabyMessage(who: String): String = when (currentAppLang) {
+    AppLang.EN -> "Profile$who will be removed. Recorded cries/feedings will NOT be deleted."
+    AppLang.EL -> "Θα αφαιρεθεί το προφίλ$who. Τα καταγεγραμμένα κλάματα/ταΐσματα ΔΕΝ διαγράφονται."
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1_048_576L -> "%.1f MB".format(bytes / 1_048_576.0)
+    bytes >= 1024L -> "%.0f KB".format(bytes / 1024.0)
+    else -> "$bytes B"
 }
 
 @Composable

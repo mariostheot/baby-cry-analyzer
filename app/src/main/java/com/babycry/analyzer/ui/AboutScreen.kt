@@ -19,17 +19,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.babycry.analyzer.ui.i18n.AppLang
+import com.babycry.analyzer.ui.i18n.currentAppLang
+import com.babycry.analyzer.ui.i18n.tr
 
 @Composable
 fun AboutScreen(modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
-    val version = remember {
+    val version = remember(currentAppLang) {
         runCatching {
             val pi = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
             val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
                 pi.longVersionCode else @Suppress("DEPRECATION") pi.versionCode.toLong()
-            "Έκδοση ${pi.versionName} (build $code)"
-        }.getOrDefault("Έκδοση 1.0")
+            when (currentAppLang) {
+                AppLang.EN -> "Version ${pi.versionName} (build $code)"
+                AppLang.EL -> "Έκδοση ${pi.versionName} (build $code)"
+            }
+        }.getOrDefault(
+            when (currentAppLang) {
+                AppLang.EN -> "Version 1.0"
+                AppLang.EL -> "Έκδοση 1.0"
+            },
+        )
     }
     val year = remember { java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) }
 
@@ -44,7 +55,7 @@ fun AboutScreen(modifier: Modifier = Modifier) {
         Text("👶🔊", style = MaterialTheme.typography.displaySmall)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Γιατί Κλαίει;",
+            tr("Γιατί Κλαίει;"),
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center,
         )
@@ -55,7 +66,7 @@ fun AboutScreen(modifier: Modifier = Modifier) {
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "Δημιουργήθηκε από τον Μάριο Θεοτή",
+            tr("Δημιουργήθηκε από τον Μάριο Θεοτή"),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary,
             textAlign = TextAlign.Center,
@@ -64,38 +75,45 @@ fun AboutScreen(modifier: Modifier = Modifier) {
         Spacer(Modifier.height(24.dp))
 
         InfoCard(
-            title = "Τι κάνει",
-            body = "Ηχογραφεί το κλάμα του μωρού και εκτιμά την πιθανή αιτία " +
-                "(πείνα, κούραση, κοιλόπονος, ρέψιμο, δυσφορία) με ένα μοντέλο AI " +
-                "που τρέχει τοπικά στο κινητό. Μαθαίνει από τις διορθώσεις σου.",
+            title = tr("Τι κάνει"),
+            body = tr(
+                "Ηχογραφεί το κλάμα του μωρού και εκτιμά την πιθανή αιτία (πείνα, κούραση, κοιλόπονος, ρέψιμο, δυσφορία) με ένα μοντέλο AI που τρέχει τοπικά στο κινητό. Μαθαίνει από τις διορθώσεις σου.",
+            ),
         )
 
         Spacer(Modifier.height(12.dp))
         InfoCard(
-            title = "Ιδιωτικότητα",
-            body = "Όλα γίνονται τοπικά στη συσκευή. Καμία ηχογράφηση ή δεδομένο δεν " +
-                "ανεβαίνει στο διαδίκτυο και δεν μοιράζεται με κανέναν.",
+            title = tr("Ιδιωτικότητα"),
+            body = tr(
+                "Όλα γίνονται τοπικά στη συσκευή. Καμία ηχογράφηση ή δεδομένο δεν ανεβαίνει στο διαδίκτυο και δεν μοιράζεται με κανέναν.",
+            ),
         )
 
         Spacer(Modifier.height(12.dp))
         InfoCard(
-            title = "Τεχνολογία & credits",
-            body = "• YAMNet (Google, AudioSet) — εξαγωγή χαρακτηριστικών ήχου\n" +
-                "• TensorFlow Lite — inference στο κινητό\n" +
-                "• Σύνολα δεδομένων: donateacry-corpus, InfantCry-DBL (Mendeley Data), ESC-50\n" +
-                "• Jetpack Compose · Material 3",
+            title = tr("Τεχνολογία & credits"),
+            body = tr(
+                "• YAMNet (Google, AudioSet) — εξαγωγή χαρακτηριστικών ήχου\n" +
+                    "• TensorFlow Lite — inference στο κινητό\n" +
+                    "• Σύνολα δεδομένων: donateacry-corpus, InfantCry-DBL (Mendeley Data), ESC-50\n" +
+                    "• Jetpack Compose · Material 3",
+            ),
         )
 
         Spacer(Modifier.height(12.dp))
         InfoCard(
-            title = "Σημαντική σημείωση",
-            body = "Ενημερωτικό βοήθημα, όχι ιατρική συσκευή ή διάγνωση. Για οτιδήποτε " +
-                "αφορά την υγεία του μωρού, συμβουλέψου παιδίατρο.",
+            title = tr("Σημαντική σημείωση"),
+            body = tr(
+                "Ενημερωτικό βοήθημα, όχι ιατρική συσκευή ή διάγνωση. Για οτιδήποτε αφορά την υγεία του μωρού, συμβουλέψου παιδίατρο.",
+            ),
         )
 
         Spacer(Modifier.height(24.dp))
         Text(
-            "© $year Μάριος Θεοτή",
+            when (currentAppLang) {
+                AppLang.EN -> "© $year Mario Theotis"
+                AppLang.EL -> "© $year Μάριος Θεοτή"
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
         )

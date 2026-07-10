@@ -29,7 +29,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import com.babycry.analyzer.ui.i18n.AppLang
+import com.babycry.analyzer.ui.i18n.currentAppLang
+import com.babycry.analyzer.ui.i18n.tr
 
 /**
  * Shows the generated HTML report right inside the app (a WebView), so tapping "Report"
@@ -41,8 +43,9 @@ fun ReportScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var html by remember { mutableStateOf<String?>(null) }
     var webRef by remember { mutableStateOf<WebView?>(null) }
+    val language by viewModel.language.collectAsState()
 
-    LaunchedEffect(Unit) { html = viewModel.exportReportHtml() }
+    LaunchedEffect(language) { html = viewModel.exportReportHtml() }
 
     Column(modifier.fillMaxSize()) {
         val h = html
@@ -60,7 +63,7 @@ fun ReportScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                 Button(onClick = { webRef?.let { printReport(context, it) } }) {
                     Icon(Icons.Filled.PictureAsPdf, contentDescription = null)
                     Spacer(Modifier.size(8.dp))
-                    Text("Αποθήκευση / Κοινοποίηση PDF")
+                    Text(tr("Αποθήκευση / Κοινοποίηση PDF"))
                 }
             }
             AndroidView(
@@ -81,7 +84,10 @@ private fun printReport(context: Context, web: WebView) {
     val printManager = context.getSystemService(Context.PRINT_SERVICE) as? PrintManager ?: return
     val adapter = web.createPrintDocumentAdapter("baby-cry-report")
     printManager.print(
-        "Γιατί Κλαίει; — Αναφορά",
+        when (currentAppLang) {
+            AppLang.EN -> "Why is Baby Crying? — Report"
+            AppLang.EL -> "Γιατί Κλαίει; — Αναφορά"
+        },
         adapter,
         PrintAttributes.Builder().build(),
     )

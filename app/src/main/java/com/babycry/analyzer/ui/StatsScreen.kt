@@ -29,13 +29,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.babycry.analyzer.data.StatsSummary
+import com.babycry.analyzer.ui.i18n.tr
 import kotlin.math.roundToInt
 
 @Composable
 fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     var stats by remember { mutableStateOf<StatsSummary?>(null) }
+    val language by viewModel.language.collectAsState()
 
-    LaunchedEffect(Unit) { stats = viewModel.loadStats() }
+    LaunchedEffect(language) { stats = viewModel.loadStats() }
 
     Column(
         modifier = modifier
@@ -44,47 +46,61 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
             .padding(16.dp),
     ) {
         Text(
-            "Στατιστικά & ακρίβεια",
+            tr("Πώς τα πάει"),
             style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.padding(vertical = 12.dp),
+            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
         )
+        Text(
+            tr("Τα νούμερα βασίζονται στις δικές σου επιβεβαιώσεις και διορθώσεις. Όσο περισσότερο απαντάς, τόσο πιο ακριβή γίνονται."),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
+        Spacer(Modifier.height(12.dp))
 
         val s = stats
         if (s == null) {
-            Text("Φόρτωση...")
+            Text(tr("Φόρτωση..."))
             return@Column
         }
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                MetricRow("Μηχανή", if (s.hasModel) "AI μοντέλο" else "Πρόχειρη εκτίμηση")
-                MetricRow("Καταγεγραμμένα κλάματα", s.totalCries.toString())
-                MetricRow("Επιβεβαιωμένες κρίσεις", s.confirmedCount.toString())
+                MetricRow(tr("Τρόπος ανάλυσης"), tr(if (s.hasModel) "Έξυπνο μοντέλο (AI)" else "Απλή εκτίμηση"))
+                MetricRow(tr("Κλάματα που καταγράφηκαν"), s.totalCries.toString())
+                MetricRow(tr("Φορές που έδωσες απάντηση"), s.confirmedCount.toString())
                 MetricRow(
-                    "Ακρίβεια (από feedback)",
+                    tr("Σωστές προβλέψεις"),
                     s.accuracy?.let { "${(it * 100).roundToInt()}%" } ?: "—",
                 )
-                MetricRow("Δείγματα εκμάθησης", s.feedbackCount.toString())
+                MetricRow(tr("Όσα έμαθε από εσένα"), s.feedbackCount.toString())
                 MetricRow(
-                    "Προσωποποίηση Tier 2",
-                    when {
-                        !s.tier2Available -> "μη διαθέσιμη"
-                        s.tier2Ready -> "ενεργή"
-                        else -> "σε αναμονή δεδομένων"
-                    },
+                    tr("Προσαρμογή στο μωρό σου"),
+                    tr(
+                        when {
+                            !s.tier2Available -> "δεν υποστηρίζεται εδώ"
+                            s.tier2Ready -> "ενεργή"
+                            else -> "μαθαίνει ακόμη"
+                        },
+                    ),
                 )
             }
         }
+        Spacer(Modifier.height(6.dp))
+        Caption(
+            tr(
+                "• «Φορές που έδωσες απάντηση»: πόσες φορές πάτησες ✓ ή διόρθωσες μια πρόβλεψη.\n" +
+                    "• «Σωστές προβλέψεις»: από αυτές, πόσες τις είχε βρει σωστά η εφαρμογή.\n" +
+                    "• «Προσαρμογή στο μωρό σου»: όταν μαζευτούν αρκετές διορθώσεις, το μοντέλο προσαρμόζεται ειδικά στο δικό σου μωρό.",
+            ),
+        )
 
-        Spacer(Modifier.height(16.dp))
-        Text("Κατανομή αιτιών", style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(18.dp))
+        SectionHeader(
+            tr("Πόσο συχνά εμφανίζεται κάθε αιτία"),
+            tr("Η κατανομή όλων των κλαμάτων που κατέγραψες."),
+        )
         if (s.totalCries == 0) {
-            Text(
-                "Δεν υπάρχουν ακόμη καταγραφές.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            )
+            Caption(tr("Δεν υπάρχουν ακόμη καταγραφές."))
         } else {
             Spacer(Modifier.height(8.dp))
             Card(Modifier.fillMaxWidth()) {
@@ -94,7 +110,7 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                         val count = s.predictedDistribution.getOrElse(i) { 0 }
                         val pct = 100 * count / s.totalCries.coerceAtLeast(1)
                         DistributionBar(
-                            label = "${reason.emoji} ${reason.displayName}",
+                            label = "${reason.emoji} ${tr(reason.displayName)}",
                             value = "$count ($pct%)",
                             fraction = count.toFloat() / maxCount,
                         )
@@ -104,28 +120,64 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
             }
         }
 
-        Spacer(Modifier.height(16.dp))
-        Text("Ανάκληση ανά κατηγορία (recall)", style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(8.dp))
-        s.labels.forEachIndexed { i, reason ->
-            MetricRow(
-                "${reason.emoji} ${reason.displayName}",
-                s.perClassRecall.getOrNull(i)?.let { "${(it * 100).roundToInt()}%" } ?: "—",
-            )
+        Spacer(Modifier.height(18.dp))
+        SectionHeader(
+            tr("Πόσο καλά αναγνωρίζει κάθε αιτία"),
+            tr(
+                "Από τις φορές που η αιτία ήταν πραγματικά αυτή (με βάση τις διορθώσεις σου), " +
+                    "πόσες τις βρήκε σωστά. Υψηλότερο = καλύτερα.",
+            ),
+        )
+        if (s.confirmedCount == 0) {
+            Caption(tr("Δώσε μερικές απαντήσεις/διορθώσεις για να εμφανιστούν αυτά τα ποσοστά."))
+        } else {
+            Spacer(Modifier.height(8.dp))
+            s.labels.forEachIndexed { i, reason ->
+                MetricRow(
+                    "${reason.emoji} ${tr(reason.displayName)}",
+                    s.perClassRecall.getOrNull(i)?.let { "${(it * 100).roundToInt()}%" } ?: "—",
+                )
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+        SectionHeader(
+            tr("Τι μπερδεύει με τι"),
+            tr(
+                "Κάθε γραμμή = η πραγματική αιτία, κάθε στήλη = τι μάντεψε η εφαρμογή. " +
+                    "Τα νούμερα στη διαγώνιο (ίδιο εικονίδιο) είναι τα σωστά· τα υπόλοιπα, τα μπερδέματα.",
+            ),
+        )
+        if (s.confirmedCount == 0) {
+            Caption(tr("Θα εμφανιστεί μόλις αρχίσεις να δίνεις διορθώσεις."))
+        } else {
+            Spacer(Modifier.height(8.dp))
+            ConfusionMatrix(s)
         }
 
         Spacer(Modifier.height(16.dp))
-        Text("Πίνακας σύγχυσης (γραμμή=σωστό)", style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(8.dp))
-        ConfusionMatrix(s)
-
-        Spacer(Modifier.height(12.dp))
-        Text(
-            "Οι διορθώσεις σου τροφοδοτούν αυτά τα νούμερα. Διαχείριση δεδομένων στις Ρυθμίσεις.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-        )
+        Caption(tr("Διαχείριση/μηδενισμός δεδομένων: στις Ρυθμίσεις (μενού ⋮ πάνω δεξιά)."))
     }
+}
+
+@Composable
+private fun SectionHeader(title: String, subtitle: String) {
+    Text(title, style = MaterialTheme.typography.titleLarge)
+    Spacer(Modifier.height(2.dp))
+    Text(
+        subtitle,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+    )
+}
+
+@Composable
+private fun Caption(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+    )
 }
 
 @Composable

@@ -26,6 +26,9 @@ interface CryEventDao {
     @Query("SELECT * FROM cry_events WHERE id = :id")
     suspend fun byId(id: Long): CryEvent?
 
+    @Query("DELETE FROM cry_events WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Query("DELETE FROM cry_events")
     suspend fun clear()
 }

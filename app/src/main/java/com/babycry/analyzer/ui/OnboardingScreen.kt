@@ -29,6 +29,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.babycry.analyzer.ui.i18n.AppLang
+import com.babycry.analyzer.ui.i18n.currentAppLang
+import com.babycry.analyzer.ui.i18n.tr
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -43,7 +46,9 @@ fun OnboardingScreen(
     var name by remember { mutableStateOf("") }
     var birth by remember { mutableStateOf<Long?>(null) }
     var showPicker by remember { mutableStateOf(false) }
-    val dateFmt = remember { SimpleDateFormat("dd/MM/yyyy", Locale("el")) }
+    val dateFmt = remember(currentAppLang) {
+        SimpleDateFormat("dd/MM/yyyy", if (currentAppLang == AppLang.EN) Locale.ENGLISH else Locale("el"))
+    }
 
     Column(
         modifier = modifier
@@ -56,15 +61,13 @@ fun OnboardingScreen(
         Text("👶", style = MaterialTheme.typography.displayMedium)
         Spacer(Modifier.height(12.dp))
         Text(
-            "Καλώς ήρθες!",
+            tr("Καλώς ήρθες!"),
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Πες μου λίγα για το μωρό σου. Η ηλικία βοηθά την εφαρμογή να εκτιμά καλύτερα " +
-                "την αιτία του κλάματος (π.χ. πόσο συχνά πεινά ανάλογα με την ηλικία). " +
-                "Μπορείς να τα αλλάξεις όποτε θες από τις Ρυθμίσεις.",
+            tr("Πες μου λίγα για το μωρό σου. Η ηλικία βοηθά την εφαρμογή να εκτιμά καλύτερα την αιτία του κλάματος (π.χ. πόσο συχνά πεινά ανάλογα με την ηλικία). Μπορείς να τα αλλάξεις όποτε θες από τις Ρυθμίσεις."),
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
@@ -74,7 +77,7 @@ fun OnboardingScreen(
         OutlinedTextField(
             value = name,
             onValueChange = { name = it },
-            label = { Text("Όνομα μωρού") },
+            label = { Text(tr("Όνομα μωρού")) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -86,25 +89,25 @@ fun OnboardingScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text("Ημερομηνία γέννησης", style = MaterialTheme.typography.bodyLarge)
+                Text(tr("Ημερομηνία γέννησης"), style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    birth?.let { dateFmt.format(Date(it)) } ?: "Δεν έχει οριστεί",
+                    birth?.let { dateFmt.format(Date(it)) } ?: tr("Δεν έχει οριστεί"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
             }
-            OutlinedButton(onClick = { showPicker = true }) { Text("Επιλογή") }
+            OutlinedButton(onClick = { showPicker = true }) { Text(tr("Επιλογή")) }
         }
 
         Spacer(Modifier.height(32.dp))
         Button(
             onClick = { onFinish(name, birth) },
             modifier = Modifier.fillMaxWidth(),
-        ) { Text("Ξεκίνα") }
+        ) { Text(tr("Ξεκίνα")) }
 
         Spacer(Modifier.height(8.dp))
         TextButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
-            Text("Θα το κάνω αργότερα")
+            Text(tr("Θα το κάνω αργότερα"))
         }
     }
 
@@ -121,7 +124,7 @@ fun OnboardingScreen(
                 }) { Text("OK") }
             },
             dismissButton = {
-                TextButton(onClick = { showPicker = false }) { Text("Άκυρο") }
+                TextButton(onClick = { showPicker = false }) { Text(tr("Άκυρο")) }
             },
         ) {
             DatePicker(state = state)

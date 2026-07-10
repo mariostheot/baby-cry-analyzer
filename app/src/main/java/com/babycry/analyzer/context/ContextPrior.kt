@@ -10,32 +10,44 @@ import com.babycry.analyzer.model.CryReason
 object ContextPrior {
 
     /**
-     * Typical hours between feeds by age, from AAP (HealthyChildren.org), NHS and Johns
-     * Hopkins guidance. Younger babies feed far more often, so "hunger" should ramp up much
-     * faster for a newborn than for a 6-month-old. Used to scale the hunger prior below.
+     * Typical hours between feeds by age. Based on AAP (HealthyChildren.org), NHS and Johns
+     * Hopkins guidance, but tuned for the newborn weeks from real-world experience: in the
+     * first ~3 weeks a baby often wants to feed roughly every hour (much more frequently than
+     * the ~2-3h the guidelines quote, especially with cluster feeding). Younger babies feed
+     * far more often, so "hunger" ramps up much faster for a newborn than for a 6-month-old.
      *
-     * - 0-4 weeks: ~2-3 h (8-12 feeds/24h; evening cluster-feeding can be far more frequent)
-     * - 1-2 months: ~3-4 h (6-8/day)
-     * - 2-4 months: ~3-4 h (5-6/day)
-     * - 4-6 months: ~4 h
-     * - 6+ months:  ~4-5 h (plus solids)
+     * - 0-3 weeks:  ~1 h   (very frequent / cluster feeding - from experience)
+     * - 3-6 weeks:  ~2 h
+     * - 6-8 weeks:  ~2.5 h
+     * - 2-4 months: ~3 h
+     * - 4-6 months: ~3.5 h
+     * - 6+ months:  ~4 h   (plus solids)
+     *
+     * [ageDays] takes precedence for the earliest weeks; [ageMonths] covers the rest.
      */
-    fun expectedFeedIntervalHours(ageMonths: Int?): Float = when {
+    fun expectedFeedIntervalHours(ageMonths: Int?, ageDays: Int? = null): Float = when {
+        ageDays != null && ageDays < 21 -> 1f    // first 3 weeks: ~hourly
+        ageDays != null && ageDays < 42 -> 2f    // weeks 3-6
         ageMonths == null -> 3f
-        ageMonths < 1 -> 2.5f
-        ageMonths < 2 -> 3f
-        ageMonths < 4 -> 3.5f
-        ageMonths < 6 -> 4f
-        else -> 4.5f
+        ageMonths < 2 -> 2.5f
+        ageMonths < 4 -> 3f
+        ageMonths < 6 -> 3.5f
+        else -> 4f
     }
 
     /**
      * @param hoursSinceFeed hours since the last logged feeding, or null if unknown.
      * @param hourOfDay 0..23 local hour.
      * @param ageMonths baby's age in whole months, or null if unknown.
+     * @param ageDays baby's age in whole days, or null if unknown (drives the newborn weeks).
      * @return one multiplier per class, in [CryReason.canonicalOrder].
      */
-    fun multipliers(hoursSinceFeed: Float?, hourOfDay: Int, ageMonths: Int? = null): FloatArray {
+    fun multipliers(
+        hoursSinceFeed: Float?,
+        hourOfDay: Int,
+        ageMonths: Int? = null,
+        ageDays: Int? = null,
+    ): FloatArray {
         val m = FloatArray(CryReason.canonicalOrder.size) { 1f }
         val idxHungry = CryReason.HUNGRY.ordinal
         val idxTired = CryReason.TIRED.ordinal
@@ -46,7 +58,7 @@ object ContextPrior {
         // Hunger scales with how far we are into the age-appropriate feeding interval, rather
         // than fixed hour thresholds. ratio = 1.0 means "about the usual time for a feed".
         if (hoursSinceFeed != null) {
-            val expected = expectedFeedIntervalHours(ageMonths)
+            val expected = expectedFeedIntervalHours(ageMonths, ageDays)
             val ratio = hoursSinceFeed / expected
             m[idxHungry] = when {
                 ratio < 0.4f -> 0.5f                                   // just fed

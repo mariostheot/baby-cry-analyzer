@@ -6,6 +6,9 @@ import com.babycry.analyzer.ml.CryAnalysis
 import com.babycry.analyzer.ml.CryAnalyzer
 import com.babycry.analyzer.model.BabyProfile
 import com.babycry.analyzer.model.CryReason
+import com.babycry.analyzer.ui.i18n.AppLang
+import com.babycry.analyzer.ui.i18n.currentAppLang
+import com.babycry.analyzer.ui.i18n.trS
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -45,6 +48,11 @@ class CryRepository private constructor(
     private val feedbackDao = db.feedbackDao()
     private val feedingDao = db.feedingDao()
     private val profilePrefs = context.getSharedPreferences("profile", Context.MODE_PRIVATE)
+    private val clipStore = ClipStore(context)
+
+    init {
+        currentAppLang = getLanguage()
+    }
 
     val labels: List<CryReason> get() = analyzer.labels
     val hasModel: Boolean get() = analyzer.hasModel
@@ -74,42 +82,97 @@ class CryRepository private constructor(
         )
     }
 
-    suspend fun saveEvent(analysis: CryAnalysis): Long = withContext(Dispatchers.IO) {
-        val r = analysis.result
-        val predicted = r.topReason?.let { labels.indexOf(it) } ?: -1
-        cryDao.insert(
-            CryEvent(
-                timestamp = System.currentTimeMillis(),
-                cryDetected = r.cryDetected,
-                predictedIndex = predicted,
-                confidence = r.confidence,
-                engine = r.engine.name,
-                gateScore = analysis.gateScore,
+    suspend fun saveEvent(analysis: CryAnalysis, waveform: FloatArray? = null): Long =
+        withContext(Dispatchers.IO) {
+            val r = analysis.result
+            val predicted = r.topReason?.let { labels.indexOf(it) } ?: -1
+            val id = cryDao.insert(
+                CryEvent(
+                    timestamp = System.currentTimeMillis(),
+                    cryDetected = r.cryDetected,
+                    predictedIndex = predicted,
+                    confidence = r.confidence,
+                    engine = r.engine.name,
+                    gateScore = analysis.gateScore,
+                )
             )
-        )
-    }
+            // Only real cries are worth keeping/asking about.
+            if (r.cryDetected) {
+                if (isSaveClipsEnabled() && waveform != null) {
+                    clipStore.saveClip(id, waveform, analysis.embedding)
+                }
+                setPending(id)
+            }
+            id
+        }
 
-    /** Record a confirmation/correction and update personalization. */
+    /**
+     * Record a confirmation/correction and update personalization. Used by the immediate
+     * "I already know" flow (passes the in-memory [embedding]).
+     */
     suspend fun confirm(
         eventId: Long,
         correctReason: CryReason,
         embedding: FloatArray?,
+    ) = setReason(eventId, correctReason, embedding)
+
+    /**
+     * Sets/updates the real reason for a past cry - from the delayed prompt, the notification,
+     * or a later correction in History. When we don't have the embedding in memory (e.g. after
+     * the app restarted) we recover it from the stored clip so personalization still learns.
+     */
+    suspend fun setReason(
+        eventId: Long,
+        correctReason: CryReason,
+        embedding: FloatArray? = null,
     ) = withContext(Dispatchers.Default) {
         val event = cryDao.byId(eventId) ?: return@withContext
         val idx = labels.indexOf(correctReason).coerceAtLeast(0)
         cryDao.update(event.copy(confirmedIndex = idx))
-        if (embedding != null) {
+
+        val emb = embedding ?: clipStore.readEmbedding(eventId)
+        if (emb != null) {
             feedbackDao.insert(
                 FeedbackExample(
                     timestamp = System.currentTimeMillis(),
                     labelIndex = idx,
-                    embedding = embedding,
+                    embedding = emb,
                 )
             )
             val all = feedbackDao.all()
             analyzer.personalization.updatePrototypes(all)
             analyzer.personalization.maybeTrain(all)
         }
+        if (pendingId() == eventId) clearPending()
+    }
+
+    // ---- Delayed confirmation ("why did the baby cry?") ----------------------
+
+    /** The most recent detected cry still awaiting the parent's confirmation, or null. */
+    suspend fun pendingConfirmation(): CryEvent? = withContext(Dispatchers.IO) {
+        val id = pendingId().takeIf { it > 0L } ?: return@withContext null
+        val event = cryDao.byId(id)
+        if (event == null || !event.cryDetected || event.confirmedIndex != null) {
+            clearPending()
+            null
+        } else {
+            event
+        }
+    }
+
+    fun dismissPending() = clearPending()
+
+    private fun pendingId(): Long = profilePrefs.getLong(PENDING_ID, 0L)
+
+    private fun setPending(eventId: Long) {
+        profilePrefs.edit()
+            .putLong(PENDING_ID, eventId)
+            .putLong(PENDING_AT, System.currentTimeMillis())
+            .apply()
+    }
+
+    private fun clearPending() {
+        profilePrefs.edit().remove(PENDING_ID).remove(PENDING_AT).apply()
     }
 
     suspend fun logFeeding(note: String? = null) = withContext(Dispatchers.IO) {
@@ -179,18 +242,94 @@ class CryRepository private constructor(
 
     // ---- Baby profile --------------------------------------------------------
 
-    fun getProfile(): BabyProfile {
-        val name = profilePrefs.getString(PROFILE_NAME, "") ?: ""
-        val birth = if (profilePrefs.contains(PROFILE_BIRTH))
+    /** All babies on this device (empty before onboarding). */
+    fun getProfiles(): List<BabyProfile> {
+        profilePrefs.getString(PROFILES, null)?.let { json ->
+            return runCatching { parseProfiles(json) }.getOrDefault(emptyList())
+        }
+        // One-time migration from the old single-profile keys.
+        val oldName = profilePrefs.getString(PROFILE_NAME, null)
+        val oldBirth = if (profilePrefs.contains(PROFILE_BIRTH))
             profilePrefs.getLong(PROFILE_BIRTH, 0L).takeIf { it > 0L } else null
-        return BabyProfile(name = name, birthMillis = birth)
+        if (!oldName.isNullOrBlank() || oldBirth != null) {
+            val p = BabyProfile(name = oldName ?: "", birthMillis = oldBirth, id = newProfileId())
+            persistProfiles(listOf(p), p.id)
+            return listOf(p)
+        }
+        return emptyList()
     }
 
-    suspend fun setProfile(profile: BabyProfile) = withContext(Dispatchers.IO) {
+    /** The currently selected baby (or an empty profile if none yet). */
+    fun getProfile(): BabyProfile {
+        val list = getProfiles()
+        if (list.isEmpty()) return BabyProfile()
+        val activeId = profilePrefs.getString(ACTIVE_PROFILE, null)
+        return list.firstOrNull { it.id == activeId } ?: list.first()
+    }
+
+    suspend fun addProfile(name: String, birthMillis: Long?): String = withContext(Dispatchers.IO) {
+        val list = getProfiles().toMutableList()
+        val p = BabyProfile(name = name.trim(), birthMillis = birthMillis, id = newProfileId())
+        list.add(p)
+        persistProfiles(list, p.id)
+        p.id
+    }
+
+    /** Edits the currently active baby (creating one if there isn't any yet). */
+    suspend fun updateActiveProfile(name: String, birthMillis: Long?) = withContext(Dispatchers.IO) {
+        val list = getProfiles().toMutableList()
+        val activeId = getProfile().id
+        val idx = list.indexOfFirst { activeId.isNotBlank() && it.id == activeId }
+        if (idx >= 0) {
+            list[idx] = list[idx].copy(name = name.trim(), birthMillis = birthMillis)
+            persistProfiles(list, list[idx].id)
+        } else {
+            val p = BabyProfile(name = name.trim(), birthMillis = birthMillis, id = newProfileId())
+            list.add(p)
+            persistProfiles(list, p.id)
+        }
+    }
+
+    /** Backwards-compatible alias used by existing callers: edits the active baby. */
+    suspend fun setProfile(profile: BabyProfile) = updateActiveProfile(profile.name, profile.birthMillis)
+
+    suspend fun setActiveProfile(id: String) = withContext(Dispatchers.IO) {
+        profilePrefs.edit().putString(ACTIVE_PROFILE, id).apply()
+    }
+
+    suspend fun deleteProfile(id: String) = withContext(Dispatchers.IO) {
+        val remaining = getProfiles().filterNot { it.id == id }
+        val activeWas = getProfile().id
+        val newActive = if (activeWas == id) remaining.firstOrNull()?.id else activeWas
+        persistProfiles(remaining, newActive)
+    }
+
+    private fun newProfileId(): String = java.util.UUID.randomUUID().toString()
+
+    private fun parseProfiles(json: String): List<BabyProfile> {
+        val arr = JSONArray(json)
+        return (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            BabyProfile(
+                name = o.optString("name", ""),
+                birthMillis = if (o.has("birthMillis")) o.optLong("birthMillis") else null,
+                id = o.optString("id", "").ifBlank { newProfileId() },
+            )
+        }
+    }
+
+    private fun persistProfiles(list: List<BabyProfile>, activeId: String?) {
+        val arr = JSONArray()
+        for (p in list) {
+            arr.put(JSONObject().apply {
+                put("id", p.id)
+                put("name", p.name)
+                p.birthMillis?.let { put("birthMillis", it) }
+            })
+        }
         profilePrefs.edit().apply {
-            putString(PROFILE_NAME, profile.name.trim())
-            if (profile.birthMillis != null) putLong(PROFILE_BIRTH, profile.birthMillis)
-            else remove(PROFILE_BIRTH)
+            putString(PROFILES, arr.toString())
+            if (activeId != null) putString(ACTIVE_PROFILE, activeId) else remove(ACTIVE_PROFILE)
         }.apply()
     }
 
@@ -201,11 +340,47 @@ class CryRepository private constructor(
         profilePrefs.edit().putBoolean(ONBOARDING_DONE, true).apply()
     }
 
+    fun getLanguage(): AppLang =
+        if (profilePrefs.getString(APP_LANG, "el") == "en") AppLang.EN else AppLang.EL
+
+    fun setLanguage(lang: AppLang) {
+        profilePrefs.edit().putString(APP_LANG, lang.code).apply()
+        currentAppLang = lang
+    }
+
     /** Clears the cry history and feeding log (what the Stats screen counts). Keeps what the
-     *  model learned from you (feedback examples / personalization). */
+     *  model learned from you (feedback examples / personalization). Also drops the saved
+     *  recordings, since they're tied to the deleted events. */
     suspend fun clearHistory() = withContext(Dispatchers.IO) {
         cryDao.clear()
         feedingDao.clear()
+        clipStore.clearAll()
+        clearPending()
+    }
+
+    /** Deletes a single cry event from the history (and its saved recording). */
+    suspend fun deleteEvent(id: Long) = withContext(Dispatchers.IO) {
+        cryDao.deleteById(id)
+        clipStore.deleteClip(id)
+        if (pendingId() == id) clearPending()
+    }
+
+    // ---- Personal dataset (exportable) ---------------------------------------
+
+    fun isSaveClipsEnabled(): Boolean = profilePrefs.getBoolean(SAVE_CLIPS, true)
+
+    fun setSaveClips(enabled: Boolean) {
+        profilePrefs.edit().putBoolean(SAVE_CLIPS, enabled).apply()
+    }
+
+    /** (#clips, totalBytes) currently stored on device. */
+    suspend fun datasetInfo(): Pair<Int, Long> = withContext(Dispatchers.IO) {
+        clipStore.count() to clipStore.totalBytes()
+    }
+
+    /** Zips every confirmed clip + a labels.csv into [out]. Returns how many clips were written. */
+    suspend fun writeDatasetZip(out: java.io.OutputStream): Int = withContext(Dispatchers.IO) {
+        clipStore.writeDatasetZip(out, cryDao.allEvents(), labels)
     }
 
     // ---- Human-friendly report (HTML) ----------------------------------------
@@ -215,7 +390,11 @@ class CryRepository private constructor(
      * Far friendlier than raw CSV: a summary, the reason breakdown, and a readable table.
      */
     suspend fun exportReportHtml(): String = withContext(Dispatchers.IO) {
-        val df = SimpleDateFormat("EEE dd/MM/yyyy HH:mm", Locale("el"))
+        val lang = getLanguage()
+        val df = SimpleDateFormat(
+            "EEE dd/MM/yyyy HH:mm",
+            if (lang == AppLang.EN) Locale.ENGLISH else Locale("el"),
+        )
         val events = cryDao.allEvents()
         val stats = stats()
         val profile = getProfile()
@@ -224,9 +403,10 @@ class CryRepository private constructor(
         fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
         val sb = StringBuilder()
-        sb.append("<!DOCTYPE html><html lang=\"el\"><head><meta charset=\"utf-8\">")
+        val htmlLang = if (lang == AppLang.EN) "en" else "el"
+        sb.append("<!DOCTYPE html><html lang=\"$htmlLang\"><head><meta charset=\"utf-8\">")
         sb.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
-        sb.append("<title>Αναφορά — Γιατί Κλαίει;</title><style>")
+        sb.append("<title>${trS("Αναφορά")} — ${trS("Γιατί Κλαίει;")}</title><style>")
         sb.append(
             """
             body{font-family:-apple-system,Roboto,Segoe UI,sans-serif;margin:0;background:#f5f4f8;color:#1c1b1f}
@@ -250,41 +430,42 @@ class CryRepository private constructor(
         )
         sb.append("</style></head><body><div class=\"wrap\">")
 
-        val title = if (profile.hasName) "Αναφορά — ${esc(profile.name)}" else "Αναφορά — Γιατί Κλαίει;"
+        val title = if (profile.hasName) "${trS("Αναφορά")} — ${esc(profile.name)}"
+        else "${trS("Αναφορά")} — ${trS("Γιατί Κλαίει;")}"
         sb.append("<h1>$title</h1>")
-        sb.append("<p class=\"sub\">Δημιουργήθηκε ${esc(df.format(Date()))}</p>")
+        sb.append("<p class=\"sub\">${trS("Δημιουργήθηκε")} ${esc(df.format(Date()))}</p>")
 
         // Summary cards
         sb.append("<div class=\"cards\">")
-        sb.append("<div class=\"card\"><div class=\"n\">${stats.totalCries}</div><div class=\"l\">Κλάματα</div></div>")
+        sb.append("<div class=\"card\"><div class=\"n\">${stats.totalCries}</div><div class=\"l\">${trS("Κλάματα")}</div></div>")
         val accTxt = stats.accuracy?.let { "${Math.round(it * 100)}%" } ?: "—"
-        sb.append("<div class=\"card\"><div class=\"n\">$accTxt</div><div class=\"l\">Ακρίβεια (feedback)</div></div>")
-        sb.append("<div class=\"card\"><div class=\"n\">${stats.confirmedCount}</div><div class=\"l\">Επιβεβαιώσεις</div></div>")
-        sb.append("<div class=\"card\"><div class=\"n\">${stats.feedbackCount}</div><div class=\"l\">Δείγματα εκμάθησης</div></div>")
+        sb.append("<div class=\"card\"><div class=\"n\">$accTxt</div><div class=\"l\">${trS("Ακρίβεια (feedback)")}</div></div>")
+        sb.append("<div class=\"card\"><div class=\"n\">${stats.confirmedCount}</div><div class=\"l\">${trS("Επιβεβαιώσεις")}</div></div>")
+        sb.append("<div class=\"card\"><div class=\"n\">${stats.feedbackCount}</div><div class=\"l\">${trS("Δείγματα εκμάθησης")}</div></div>")
         sb.append("</div>")
 
         // Reason breakdown
         val distTotal = stats.predictedDistribution.sum().coerceAtLeast(1)
-        sb.append("<h2>Κατανομή αιτιών</h2>")
+        sb.append("<h2>${trS("Κατανομή αιτιών")}</h2>")
         stats.labels.forEachIndexed { i, reason ->
             val c = stats.predictedDistribution.getOrElse(i) { 0 }
             val pct = 100 * c / distTotal
-            sb.append("<div class=\"row\"><span>${esc(reason.emoji + " " + reason.displayName)}</span><span>$c ($pct%)</span></div>")
+            sb.append("<div class=\"row\"><span>${esc(reason.emoji + " " + trS(reason.displayName))}</span><span>$c ($pct%)</span></div>")
             sb.append("<div class=\"bar\"><span style=\"width:$pct%\"></span></div>")
         }
 
         // Table of recent events
-        sb.append("<h2>Καταγραφές (${cries.size})</h2>")
-        sb.append("<table><tr><th>Ώρα</th><th>Αιτία</th><th>Βεβαιότητα</th><th>Feedback</th></tr>")
+        sb.append("<h2>${trS("Καταγραφές")} (${cries.size})</h2>")
+        sb.append("<table><tr><th>${trS("Ώρα")}</th><th>${trS("Αιτία")}</th><th>${trS("Βεβαιότητα")}</th><th>${trS("Feedback")}</th></tr>")
         for (e in cries.take(300)) {
             val pred = e.predictedIndex.takeIf { it in labels.indices }?.let { labels[it] }
-            val predTxt = pred?.let { esc(it.emoji + " " + it.displayName) } ?: "—"
+            val predTxt = pred?.let { esc(it.emoji + " " + trS(it.displayName)) } ?: "—"
             val confTxt = "${Math.round(e.confidence * 100)}%"
             val fb = when {
                 e.confirmedIndex == null -> "—"
-                e.confirmedIndex == e.predictedIndex -> "<span class=\"ok\">✓ σωστό</span>"
+                e.confirmedIndex == e.predictedIndex -> "<span class=\"ok\">${trS("✓ σωστό")}</span>"
                 else -> {
-                    val corr = e.confirmedIndex!!.takeIf { it in labels.indices }?.let { labels[it].displayName } ?: ""
+                    val corr = e.confirmedIndex!!.takeIf { it in labels.indices }?.let { trS(labels[it].displayName) } ?: ""
                     "<span class=\"corr\">✎ ${esc(corr)}</span>"
                 }
             }
@@ -292,8 +473,7 @@ class CryRepository private constructor(
         }
         sb.append("</table>")
 
-        sb.append("<p class=\"foot\">«Γιατί Κλαίει;» — Δημιουργήθηκε από τον Μάριο Θεοτή. ")
-        sb.append("Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή.</p>")
+        sb.append("<p class=\"foot\">${trS("«Γιατί Κλαίει;» — Δημιουργήθηκε από τον Μάριο Θεοτή. Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή.")}</p>")
         sb.append("</div></body></html>")
         sb.toString()
     }
@@ -310,6 +490,17 @@ class CryRepository private constructor(
             put("name", profile.name)
             profile.birthMillis?.let { put("birthMillis", it) }
         })
+        // All babies (multi-profile). "profile" above stays for backwards compatibility.
+        val profilesArr = JSONArray()
+        for (p in getProfiles()) {
+            profilesArr.put(JSONObject().apply {
+                put("id", p.id)
+                put("name", p.name)
+                p.birthMillis?.let { put("birthMillis", it) }
+            })
+        }
+        root.put("profiles", profilesArr)
+        root.put("activeProfile", profile.id)
 
         val eventsArr = JSONArray()
         for (e in cryDao.allEvents()) {
@@ -351,18 +542,35 @@ class CryRepository private constructor(
     suspend fun importBackupJson(json: String): Int = withContext(Dispatchers.IO) {
         val root = JSONObject(json)
 
-        root.optJSONObject("profile")?.let { p ->
-            setProfile(
+        val profilesArr = root.optJSONArray("profiles")
+        if (profilesArr != null && profilesArr.length() > 0) {
+            val list = (0 until profilesArr.length()).map { i ->
+                val o = profilesArr.getJSONObject(i)
                 BabyProfile(
+                    name = o.optString("name", ""),
+                    birthMillis = if (o.has("birthMillis")) o.optLong("birthMillis") else null,
+                    id = o.optString("id", "").ifBlank { newProfileId() },
+                )
+            }
+            val active = root.optString("activeProfile", "")
+            persistProfiles(list, if (list.any { it.id == active }) active else list.first().id)
+        } else {
+            root.optJSONObject("profile")?.let { p ->
+                val one = BabyProfile(
                     name = p.optString("name", ""),
                     birthMillis = if (p.has("birthMillis")) p.optLong("birthMillis") else null,
+                    id = newProfileId(),
                 )
-            )
+                persistProfiles(listOf(one), one.id)
+            }
         }
 
         cryDao.clear()
         feedbackDao.clear()
         feedingDao.clear()
+        // Old clips are keyed by the previous event ids, which no longer match.
+        clipStore.clearAll()
+        clearPending()
 
         var restored = 0
         root.optJSONArray("events")?.let { arr ->
@@ -428,14 +636,25 @@ class CryRepository private constructor(
         val hours = hoursSinceLastFeed()
         val hour = java.util.Calendar.getInstance()
             .get(java.util.Calendar.HOUR_OF_DAY)
-        val ageMonths = getProfile().ageMonths()
-        return com.babycry.analyzer.context.ContextPrior.multipliers(hours, hour, ageMonths)
+        val profile = getProfile()
+        return com.babycry.analyzer.context.ContextPrior.multipliers(
+            hoursSinceFeed = hours,
+            hourOfDay = hour,
+            ageMonths = profile.ageMonths(),
+            ageDays = profile.ageDays(),
+        )
     }
 
     companion object {
         private const val PROFILE_NAME = "baby_name"
         private const val PROFILE_BIRTH = "baby_birth_millis"
+        private const val PROFILES = "profiles_json"
+        private const val ACTIVE_PROFILE = "active_profile_id"
         private const val ONBOARDING_DONE = "onboarding_done"
+        private const val PENDING_ID = "pending_confirm_id"
+        private const val PENDING_AT = "pending_confirm_at"
+        private const val SAVE_CLIPS = "save_clips"
+        private const val APP_LANG = "app_lang"
 
         @Volatile
         private var instance: CryRepository? = null
