@@ -194,6 +194,20 @@ class CryRepository private constructor(
         }.apply()
     }
 
+    /** Whether the one-time welcome/profile screen has already been shown. */
+    fun isOnboardingComplete(): Boolean = profilePrefs.getBoolean(ONBOARDING_DONE, false)
+
+    fun setOnboardingComplete() {
+        profilePrefs.edit().putBoolean(ONBOARDING_DONE, true).apply()
+    }
+
+    /** Clears the cry history and feeding log (what the Stats screen counts). Keeps what the
+     *  model learned from you (feedback examples / personalization). */
+    suspend fun clearHistory() = withContext(Dispatchers.IO) {
+        cryDao.clear()
+        feedingDao.clear()
+    }
+
     // ---- Human-friendly report (HTML) ----------------------------------------
 
     /**
@@ -421,6 +435,7 @@ class CryRepository private constructor(
     companion object {
         private const val PROFILE_NAME = "baby_name"
         private const val PROFILE_BIRTH = "baby_birth_millis"
+        private const val ONBOARDING_DONE = "onboarding_done"
 
         @Volatile
         private var instance: CryRepository? = null

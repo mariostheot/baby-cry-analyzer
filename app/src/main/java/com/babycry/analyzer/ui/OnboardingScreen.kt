@@ -1,0 +1,130 @@
+package com.babycry.analyzer.ui
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun OnboardingScreen(
+    onFinish: (name: String, birthMillis: Long?) -> Unit,
+    onSkip: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var name by remember { mutableStateOf("") }
+    var birth by remember { mutableStateOf<Long?>(null) }
+    var showPicker by remember { mutableStateOf(false) }
+    val dateFmt = remember { SimpleDateFormat("dd/MM/yyyy", Locale("el")) }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.height(24.dp))
+        Text("👶", style = MaterialTheme.typography.displayMedium)
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Καλώς ήρθες!",
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Πες μου λίγα για το μωρό σου. Η ηλικία βοηθά την εφαρμογή να εκτιμά καλύτερα " +
+                "την αιτία του κλάματος (π.χ. πόσο συχνά πεινά ανάλογα με την ηλικία). " +
+                "Μπορείς να τα αλλάξεις όποτε θες από τις Ρυθμίσεις.",
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+        )
+
+        Spacer(Modifier.height(28.dp))
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Όνομα μωρού") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(Modifier.height(16.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Ημερομηνία γέννησης", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    birth?.let { dateFmt.format(Date(it)) } ?: "Δεν έχει οριστεί",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            }
+            OutlinedButton(onClick = { showPicker = true }) { Text("Επιλογή") }
+        }
+
+        Spacer(Modifier.height(32.dp))
+        Button(
+            onClick = { onFinish(name, birth) },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Ξεκίνα") }
+
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
+            Text("Θα το κάνω αργότερα")
+        }
+    }
+
+    if (showPicker) {
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = birth ?: System.currentTimeMillis(),
+        )
+        DatePickerDialog(
+            onDismissRequest = { showPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    birth = state.selectedDateMillis
+                    showPicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPicker = false }) { Text("Άκυρο") }
+            },
+        ) {
+            DatePicker(state = state)
+        }
+    }
+}

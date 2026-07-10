@@ -43,20 +43,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.babycry.analyzer.ui.AboutScreen
 import com.babycry.analyzer.ui.CryViewModel
 import com.babycry.analyzer.ui.HistoryScreen
 import com.babycry.analyzer.ui.HomeScreen
+import com.babycry.analyzer.ui.OnboardingScreen
+import com.babycry.analyzer.ui.ReportScreen
 import com.babycry.analyzer.ui.SettingsScreen
 import com.babycry.analyzer.ui.StatsScreen
 import com.babycry.analyzer.ui.theme.BabyCryTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -79,6 +79,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 private enum class Overlay(val title: String) {
     SETTINGS("Ρυθμίσεις"),
     ABOUT("Σχετικά"),
+    REPORT("Αναφορά"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -92,6 +93,7 @@ private fun AppRoot() {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val home by viewModel.home.collectAsState()
+    val onboardingDone by viewModel.onboardingComplete.collectAsState()
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -157,24 +159,6 @@ private fun AppRoot() {
         }
     }
 
-    val onExportReport: () -> Unit = {
-        scope.launch {
-            val html = viewModel.exportReportHtml()
-            val uri = withContext(Dispatchers.IO) {
-                val file = File(context.cacheDir, "baby-cry-report.html")
-                file.writeText(html)
-                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-            }
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/html"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "Αναφορά — Γιατί Κλαίει;")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            context.startActivity(Intent.createChooser(intent, "Εξαγωγή αναφοράς"))
-        }
-    }
-
     LaunchedEffect(home.message) {
         home.message?.let {
             snackbarHostState.showSnackbar(it)
@@ -183,6 +167,14 @@ private fun AppRoot() {
     }
 
     BackHandler(enabled = overlay != null) { overlay = null }
+
+    if (!onboardingDone) {
+        OnboardingScreen(
+            onFinish = { name, birth -> viewModel.completeOnboarding(name, birth) },
+            onSkip = { viewModel.skipOnboarding() },
+        )
+        return
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -234,11 +226,12 @@ private fun AppRoot() {
             when {
                 overlay == Overlay.SETTINGS -> SettingsScreen(
                     viewModel = viewModel,
-                    onExportReport = onExportReport,
+                    onExportReport = { overlay = Overlay.REPORT },
                     onBackup = { backupLauncher.launch("baby-cry-backup.json") },
                     onRestore = { restoreLauncher.launch(arrayOf("application/json")) },
                 )
                 overlay == Overlay.ABOUT -> AboutScreen()
+                overlay == Overlay.REPORT -> ReportScreen(viewModel)
                 tab == Tab.HOME -> HomeScreen(viewModel, onListen, onShareResult)
                 tab == Tab.HISTORY -> HistoryScreen(viewModel)
                 tab == Tab.STATS -> StatsScreen(viewModel)

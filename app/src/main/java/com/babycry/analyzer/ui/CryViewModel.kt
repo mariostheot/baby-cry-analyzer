@@ -55,6 +55,9 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     private val _profile = MutableStateFlow(repo.getProfile())
     val profile: StateFlow<BabyProfile> = _profile.asStateFlow()
 
+    private val _onboardingComplete = MutableStateFlow(repo.isOnboardingComplete())
+    val onboardingComplete: StateFlow<Boolean> = _onboardingComplete.asStateFlow()
+
     val canReplay: Boolean get() = lastWaveform != null
 
     val feedbackCount: StateFlow<Int> = repo.feedbackCount()
@@ -189,6 +192,28 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
             repo.setProfile(p)
             _profile.value = repo.getProfile()
             _home.update { it.copy(message = "Το προφίλ αποθηκεύτηκε.") }
+        }
+    }
+
+    /** First-run: save the baby profile and never show the welcome screen again. */
+    fun completeOnboarding(name: String, birthMillis: Long?) {
+        viewModelScope.launch {
+            repo.setProfile(BabyProfile(name = name.trim(), birthMillis = birthMillis))
+            repo.setOnboardingComplete()
+            _profile.value = repo.getProfile()
+            _onboardingComplete.value = true
+        }
+    }
+
+    fun skipOnboarding() {
+        repo.setOnboardingComplete()
+        _onboardingComplete.value = true
+    }
+
+    fun clearHistory() {
+        viewModelScope.launch {
+            repo.clearHistory()
+            _home.update { it.copy(message = "Το ιστορικό & τα στατιστικά μηδενίστηκαν.") }
         }
     }
 

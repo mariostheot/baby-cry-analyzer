@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<paths>
-    <!-- The exported report is written to cacheDir/ before sharing. -->
-    <cache-path name="reports" path="." />
-</paths>

@@ -14,10 +14,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DatePicker
@@ -40,10 +43,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private enum class Confirm { RESET_PERSONALIZATION, CLEAR_HISTORY }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,10 +63,13 @@ fun SettingsScreen(
     val profile by viewModel.profile.collectAsState()
     val personalization by viewModel.personalizationEnabled.collectAsState()
     val context by viewModel.contextEnabled.collectAsState()
+    val focus = LocalFocusManager.current
 
     var name by remember(profile) { mutableStateOf(profile.name) }
     var birth by remember(profile) { mutableStateOf(profile.birthMillis) }
     var showPicker by remember { mutableStateOf(false) }
+    var justSaved by remember { mutableStateOf(false) }
+    var confirm by remember { mutableStateOf<Confirm?>(null) }
 
     val dateFmt = remember { SimpleDateFormat("dd/MM/yyyy", Locale("el")) }
 
@@ -82,7 +91,7 @@ fun SettingsScreen(
             Column(Modifier.padding(16.dp)) {
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = { name = it; justSaved = false },
                     label = { Text("Όνομα") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -105,9 +114,29 @@ fun SettingsScreen(
                 }
                 Spacer(Modifier.height(12.dp))
                 Button(
-                    onClick = { viewModel.saveProfile(name, birth) },
+                    onClick = {
+                        focus.clearFocus()
+                        viewModel.saveProfile(name, birth)
+                        justSaved = true
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Αποθήκευση προφίλ") }
+                if (justSaved) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.CheckCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.size(6.dp))
+                        Text(
+                            "Αποθηκεύτηκε",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
             }
         }
 
@@ -139,23 +168,63 @@ fun SettingsScreen(
         SectionTitle("Δεδομένα")
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                ActionRow(Icons.Filled.Description, "Εξαγωγή αναφοράς", "Όμορφη αναφορά HTML για προβολή/εκτύπωση", onExportReport)
+                ActionRow(
+                    Icons.Filled.Description,
+                    "Προβολή / Εξαγωγή αναφοράς",
+                    "Ανοίγει μια όμορφη αναφορά· από εκεί την αποθηκεύεις ή τη μοιράζεσαι ως PDF",
+                    onExportReport,
+                )
                 Divider(Modifier.padding(vertical = 4.dp))
-                ActionRow(Icons.Filled.Backup, "Δημιουργία backup", "Αποθήκευση όλων των δεδομένων σε αρχείο", onBackup)
+                ActionRow(
+                    Icons.Filled.Backup,
+                    "Δημιουργία backup",
+                    "Αποθήκευση όλων των δεδομένων σε αρχείο",
+                    onBackup,
+                )
                 Divider(Modifier.padding(vertical = 4.dp))
-                ActionRow(Icons.Filled.Restore, "Επαναφορά από backup", "Φόρτωση δεδομένων από αρχείο", onRestore)
+                ActionRow(
+                    Icons.Filled.Restore,
+                    "Επαναφορά από backup",
+                    "Φόρτωση δεδομένων από αρχείο",
+                    onRestore,
+                )
             }
         }
 
         Spacer(Modifier.height(20.dp))
 
         // ---- Personalization maintenance ----
-        SectionTitle("Προσωποποίηση")
+        SectionTitle("Προσωποποίηση (τι έμαθε από εσένα)")
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                ActionRow(Icons.Filled.Refresh, "Ανανέωση", "Ξαναφτιάχνει την προσωποποίηση από τις διορθώσεις", { viewModel.refreshData() })
+                ActionRow(
+                    Icons.Filled.Refresh,
+                    "Ανανέωση προσωποποίησης",
+                    "Ξαναϋπολογίζει όσα έμαθε από τις διορθώσεις σου. Δεν σβήνει τίποτα.",
+                    { viewModel.refreshData() },
+                )
                 Divider(Modifier.padding(vertical = 4.dp))
-                ActionRow(Icons.Filled.RestartAlt, "Μηδενισμός προσωποποίησης", "Διαγράφει όσα έμαθε το μοντέλο από εσένα", { viewModel.resetPersonalization() })
+                ActionRow(
+                    Icons.Filled.RestartAlt,
+                    "Μηδενισμός προσωποποίησης",
+                    "Ξεχνά όσα έμαθε από εσένα. Το ιστορικό & τα στατιστικά ΔΕΝ σβήνονται.",
+                    { confirm = Confirm.RESET_PERSONALIZATION },
+                )
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // ---- History / stats ----
+        SectionTitle("Ιστορικό & στατιστικά")
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                ActionRow(
+                    Icons.Filled.DeleteSweep,
+                    "Καθαρισμός ιστορικού & στατιστικών",
+                    "Μηδενίζει τα καταγεγραμμένα κλάματα, τα γραφήματα και τα ταΐσματα. Η εκμάθηση παραμένει.",
+                    { confirm = Confirm.CLEAR_HISTORY },
+                )
             }
         }
 
@@ -171,6 +240,7 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(onClick = {
                     birth = state.selectedDateMillis
+                    justSaved = false
                     showPicker = false
                 }) { Text("OK") }
             },
@@ -180,6 +250,36 @@ fun SettingsScreen(
         ) {
             DatePicker(state = state)
         }
+    }
+
+    confirm?.let { action ->
+        val (title, body) = when (action) {
+            Confirm.RESET_PERSONALIZATION ->
+                "Μηδενισμός προσωποποίησης;" to
+                    "Το μοντέλο θα ξεχάσει όσα έμαθε από τις διορθώσεις σου και θα " +
+                    "επιστρέψει στη βασική του κατάσταση. Το ιστορικό & τα στατιστικά μένουν."
+            Confirm.CLEAR_HISTORY ->
+                "Καθαρισμός ιστορικού;" to
+                    "Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα, τα γραφήματα και τα " +
+                    "ταΐσματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται."
+        }
+        AlertDialog(
+            onDismissRequest = { confirm = null },
+            title = { Text(title) },
+            text = { Text(body) },
+            confirmButton = {
+                TextButton(onClick = {
+                    when (action) {
+                        Confirm.RESET_PERSONALIZATION -> viewModel.resetPersonalization()
+                        Confirm.CLEAR_HISTORY -> viewModel.clearHistory()
+                    }
+                    confirm = null
+                }) { Text("Ναι") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirm = null }) { Text("Άκυρο") }
+            },
+        )
     }
 }
 

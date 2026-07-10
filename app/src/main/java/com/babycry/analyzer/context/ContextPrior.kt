@@ -10,6 +10,26 @@ import com.babycry.analyzer.model.CryReason
 object ContextPrior {
 
     /**
+     * Typical hours between feeds by age, from AAP (HealthyChildren.org), NHS and Johns
+     * Hopkins guidance. Younger babies feed far more often, so "hunger" should ramp up much
+     * faster for a newborn than for a 6-month-old. Used to scale the hunger prior below.
+     *
+     * - 0-4 weeks: ~2-3 h (8-12 feeds/24h; evening cluster-feeding can be far more frequent)
+     * - 1-2 months: ~3-4 h (6-8/day)
+     * - 2-4 months: ~3-4 h (5-6/day)
+     * - 4-6 months: ~4 h
+     * - 6+ months:  ~4-5 h (plus solids)
+     */
+    fun expectedFeedIntervalHours(ageMonths: Int?): Float = when {
+        ageMonths == null -> 3f
+        ageMonths < 1 -> 2.5f
+        ageMonths < 2 -> 3f
+        ageMonths < 4 -> 3.5f
+        ageMonths < 6 -> 4f
+        else -> 4.5f
+    }
+
+    /**
      * @param hoursSinceFeed hours since the last logged feeding, or null if unknown.
      * @param hourOfDay 0..23 local hour.
      * @param ageMonths baby's age in whole months, or null if unknown.
@@ -23,11 +43,16 @@ object ContextPrior {
         val idxBurp = CryReason.BURPING.ordinal
         val idxDiscomfort = CryReason.DISCOMFORT.ordinal
 
+        // Hunger scales with how far we are into the age-appropriate feeding interval, rather
+        // than fixed hour thresholds. ratio = 1.0 means "about the usual time for a feed".
         if (hoursSinceFeed != null) {
+            val expected = expectedFeedIntervalHours(ageMonths)
+            val ratio = hoursSinceFeed / expected
             m[idxHungry] = when {
-                hoursSinceFeed < 1f -> 0.5f                       // just fed -> less likely
-                hoursSinceFeed < 2f -> 1.0f
-                else -> (1f + (hoursSinceFeed - 2f) / 2f).coerceAtMost(2.5f)
+                ratio < 0.4f -> 0.5f                                   // just fed
+                ratio < 0.8f -> 0.9f
+                ratio < 1.1f -> 1.4f                                   // around due time
+                else -> (1.4f + (ratio - 1.1f) * 1.6f).coerceAtMost(2.6f) // overdue
             }
         }
 
@@ -35,21 +60,20 @@ object ContextPrior {
         val sleepy = hourOfDay in 12..15 || hourOfDay in 19..23 || hourOfDay in 0..6
         if (sleepy) m[idxTired] = 1.3f
 
-        // Age-aware nudges (gentle). Newborns: colic/gas & burping peak in the first months
-        // and feedings are frequent; older babies: teething discomfort becomes more common.
+        // Age-aware nudges (gentle). Newborns: colic/gas & burping peak in the first months;
+        // older babies: teething discomfort becomes more common and burping issues fade.
         if (ageMonths != null) {
             when {
                 ageMonths < 4 -> {
                     m[idxBelly] *= 1.25f
                     m[idxBurp] *= 1.2f
-                    m[idxHungry] *= 1.1f
                 }
                 ageMonths < 7 -> {
                     m[idxBelly] *= 1.1f
                 }
                 else -> {
-                    m[idxDiscomfort] *= 1.2f   // teething / environment
-                    m[idxBurp] *= 0.85f        // burping issues fade
+                    m[idxDiscomfort] *= 1.2f
+                    m[idxBurp] *= 0.85f
                 }
             }
         }

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Single-color (themed-icon) variant: an outlined crying baby. The system recolors it,
+         so shapes are kept as outlines/small fills rather than a solid disk. -->
+
+    <!-- Head outline -->
+    <path
+        android:pathData="M26,54 a28,28 0 1,0 56,0 a28,28 0 1,0 -56,0 z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4" />
+
+    <!-- Crying eyes -->
+    <path
+        android:pathData="M40,50 L45,45 L50,50"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M58,50 L63,45 L68,50"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Open mouth -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M48,66 a6,5 0 1,0 12,0 a6,5 0 1,0 -12,0 z" />
+
+    <!-- Tears -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M43,55 C45,57 45,60 43,61 C41,60 41,57 43,55 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M65,55 C67,57 67,60 65,61 C63,60 63,57 65,55 Z" />
+</vector>
