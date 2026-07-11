@@ -1,6 +1,5 @@
 package com.babycry.analyzer.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,14 +12,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
-import androidx.compose.material3.Divider
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -46,27 +42,16 @@ import java.util.Locale
 /**
  * A dedicated "database" page for the parent's own recordings: every confirmed cry that still
  * has a saved clip, showing the confirmed reason + when it happened, with a play button to
- * hear it again. The controls that used to live under Settings (save-recordings toggle,
- * how much is stored, and export) live here too, so everything about saved cries is in one
- * place. Kept fully on-device.
+ * hear it again. Recordings are always kept on-device (no toggle); export lives in Settings.
  */
 @Composable
-fun LibraryScreen(
-    viewModel: CryViewModel,
-    onExportDataset: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+fun LibraryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val labels = viewModel.labels
     val recents by viewModel.recentEvents.collectAsState()
     val language by viewModel.language.collectAsState()
-    val saveClips by viewModel.saveClipsEnabled.collectAsState()
     var clips by remember { mutableStateOf<List<CryEvent>>(emptyList()) }
-    var dataset by remember { mutableStateOf<Pair<Int, Long>?>(null) }
-    // Reload whenever events change (new confirmation, deletion), the toggle flips, or language changes.
-    LaunchedEffect(recents, language, saveClips) {
-        clips = viewModel.libraryEvents()
-        dataset = viewModel.datasetInfo()
-    }
+    // Reload whenever events change (new confirmation, deletion) or the language flips.
+    LaunchedEffect(recents, language) { clips = viewModel.libraryEvents() }
 
     val fmt = remember(language) {
         SimpleDateFormat(
@@ -93,66 +78,10 @@ fun LibraryScreen(
             }
         }
 
-        // ---- Controls (moved here from Settings) ----
-        item {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                tr("Αποθήκευση ηχογραφήσεων"),
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                            Text(
-                                tr("Κρατά τοπικά κάθε κλάμα μαζί με την αιτία, για να χτίσεις δικό σου dataset."),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            )
-                        }
-                        Spacer(Modifier.size(12.dp))
-                        Switch(checked = saveClips, onCheckedChange = viewModel::setSaveClips)
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        dataset?.let { (n, bytes) -> datasetInfoText(n, bytes) } ?: tr("Υπολογισμός..."),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    )
-                    Divider(Modifier.padding(vertical = 8.dp))
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable(onClick = onExportDataset)
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Filled.Archive,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(Modifier.size(14.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(tr("Εξαγωγή dataset (zip)"), style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                tr("Εξάγει τις επιβεβαιωμένες ηχογραφήσεις + labels.csv για εκπαίδευση. Μένουν στη συσκευή σου."),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
         if (clips.isEmpty()) {
             item {
                 Text(
-                    tr("Δεν υπάρχουν ακόμη αποθηκευμένες ηχογραφήσεις. Μόλις επιβεβαιώσεις γιατί έκλαψε το μωρό, η ηχογράφηση αποθηκεύεται εδώ (εφόσον είναι ενεργή η «Αποθήκευση ηχογραφήσεων» πιο πάνω)."),
+                    tr("Δεν υπάρχουν ακόμη αποθηκευμένες ηχογραφήσεις. Μόλις επιβεβαιώσεις γιατί έκλαψε το μωρό, η ηχογράφηση αποθηκεύεται εδώ αυτόματα."),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     modifier = Modifier.padding(top = 8.dp),
@@ -171,17 +100,6 @@ fun LibraryScreen(
 
         item { Spacer(Modifier.height(16.dp)) }
     }
-}
-
-private fun datasetInfoText(n: Int, bytes: Long): String = when (currentAppLang) {
-    AppLang.EN -> "Stored: $n recordings • ${formatBytes(bytes)}"
-    AppLang.EL -> "Αποθηκευμένα: $n ηχογραφήσεις • ${formatBytes(bytes)}"
-}
-
-private fun formatBytes(bytes: Long): String = when {
-    bytes >= 1_048_576L -> "%.1f MB".format(bytes / 1_048_576.0)
-    bytes >= 1024L -> "%.0f KB".format(bytes / 1024.0)
-    else -> "$bytes B"
 }
 
 @Composable

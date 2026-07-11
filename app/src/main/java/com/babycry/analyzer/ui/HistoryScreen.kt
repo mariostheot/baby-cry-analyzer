@@ -36,13 +36,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.babycry.analyzer.context.ContextPrior
 import com.babycry.analyzer.data.CryEvent
+import com.babycry.analyzer.data.DiaperEvent
 import com.babycry.analyzer.data.FeedingEvent
+import com.babycry.analyzer.data.TummyTimeEvent
 import com.babycry.analyzer.model.BabyProfile
 import com.babycry.analyzer.model.CryReason
+import com.babycry.analyzer.model.DiaperType
+import com.babycry.analyzer.model.TummyTime
 import com.babycry.analyzer.ui.i18n.AppLang
 import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.tr
@@ -63,6 +68,8 @@ private fun dayShortFormat() = SimpleDateFormat("EEE", displayLocale())
 fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val events by viewModel.recentEvents.collectAsState()
     val feedings by viewModel.recentFeedings.collectAsState()
+    val diapers by viewModel.recentDiapers.collectAsState()
+    val tummy by viewModel.recentTummy.collectAsState()
     val profile by viewModel.profile.collectAsState()
     val labels = viewModel.labels
     val language by viewModel.language.collectAsState()
@@ -72,10 +79,12 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
 
     val now = System.currentTimeMillis()
     val cries = remember(events) { events.filter { it.cryDetected } }
-    val summary = remember(events, feedings, profile, language) {
-        computeSummary(cries, feedings, labels, profile, now)
+    val summary = remember(events, feedings, diapers, tummy, profile, language) {
+        computeSummary(cries, feedings, diapers, tummy, labels, profile, now)
     }
-    val lines = remember(events, feedings, language) { buildTimeline(cries, feedings, now) }
+    val lines = remember(events, feedings, diapers, tummy, language) {
+        buildTimeline(cries, feedings, diapers, tummy, now)
+    }
 
     LazyColumn(
         modifier = modifier
@@ -92,7 +101,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(tr("Ιστορικό"), style = MaterialTheme.typography.headlineMedium)
-                if (cries.isNotEmpty() || feedings.isNotEmpty()) {
+                if (cries.isNotEmpty() || feedings.isNotEmpty() || diapers.isNotEmpty() || tummy.isNotEmpty()) {
                     TextButton(onClick = { confirmClear = true }) {
                         Icon(Icons.Filled.DeleteSweep, contentDescription = null)
                         Spacer(Modifier.size(4.dp))
@@ -102,7 +111,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
             }
         }
 
-        if (cries.isEmpty() && feedings.isEmpty()) {
+        if (cries.isEmpty() && feedings.isEmpty() && diapers.isEmpty() && tummy.isEmpty()) {
             item {
                 Text(tr("Δεν υπάρχουν ακόμα καταγραφές. Πάτα «Άκου το μωρό» ή κατέγραψε ένα τάισμα."))
             }
@@ -126,6 +135,8 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                         is Line.Header -> "h_${it.label}"
                         is Line.Cry -> "c_${it.e.id}"
                         is Line.Feed -> "f_${it.e.id}"
+                        is Line.Diaper -> "d_${it.e.id}"
+                        is Line.Tummy -> "t_${it.e.id}"
                     }
                 },
             ) { line ->
@@ -143,6 +154,8 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                         onDelete = { pendingDelete = line.e },
                     )
                     is Line.Feed -> FeedRow(line.e)
+                    is Line.Diaper -> DiaperRow(line.e)
+                    is Line.Tummy -> TummyRow(line.e)
                 }
             }
             item { PatternsCard(summary) }
@@ -309,6 +322,13 @@ private fun TodayCard(s: HistorySummary) {
             )
             Spacer(Modifier.height(6.dp))
             InsightLine(tr("Ταΐσματα"), s.feedsToday.toString())
+            Spacer(Modifier.height(6.dp))
+            InsightLine(
+                tr("Αλλαγές πάνας"),
+                if (s.poopsToday > 0) "${s.diapersToday}  (💩 ${s.poopsToday})" else s.diapersToday.toString(),
+            )
+            Spacer(Modifier.height(6.dp))
+            InsightLine("🤸 Tummy Time", "${s.tummyToday} / ${s.tummyGoal}")
             if (s.topReasonToday != null) {
                 Spacer(Modifier.height(6.dp))
                 InsightLine(
@@ -419,6 +439,60 @@ private fun FeedRow(feeding: FeedingEvent) {
 }
 
 @Composable
+private fun DiaperRow(diaper: DiaperEvent) {
+    val type = DiaperType.fromNameOrNull(diaper.type) ?: DiaperType.WET
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f),
+        ),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                "${type.emoji}  ${tr("Πάνα")} · ${tr(type.displayName)}",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                timeFormat().format(Date(diaper.timestamp)),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TummyRow(tummy: TummyTimeEvent) {
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+        ),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("🤸  Tummy Time", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                timeFormat().format(Date(tummy.timestamp)),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+        }
+    }
+}
+
+@Composable
 private fun PatternsCard(s: HistorySummary) {
     Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Column(Modifier.padding(16.dp)) {
@@ -448,41 +522,61 @@ private fun PatternsCard(s: HistorySummary) {
             Spacer(Modifier.height(14.dp))
             Text(tr("Κλάματα ανά ημέρα (τελευταίες 7)"), style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(8.dp))
-            val maxDay = (s.perDay.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .height(80.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.Bottom,
+            DayBars(s.perDay, MaterialTheme.colorScheme.primary)
+
+            if (s.diaperPerDay.any { it.second > 0 }) {
+                Spacer(Modifier.height(14.dp))
+                Text(tr("Πάνες ανά ημέρα (τελευταίες 7)"), style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(8.dp))
+                DayBars(s.diaperPerDay, MaterialTheme.colorScheme.tertiary)
+            }
+
+            if (s.tummyPerDay.any { it.second > 0 }) {
+                Spacer(Modifier.height(14.dp))
+                Text(tr("Tummy time ανά ημέρα (τελευταίες 7)"), style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(8.dp))
+                DayBars(s.tummyPerDay, MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+}
+
+/** A tiny 7-day bar chart (count on top, day label below). Reused for cries and diapers. */
+@Composable
+private fun DayBars(data: List<Pair<String, Int>>, color: Color) {
+    val maxDay = (data.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(80.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        data.forEach { (label, count) ->
+            Column(
+                Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Bottom,
             ) {
-                s.perDay.forEach { (label, count) ->
-                    Column(
-                        Modifier.weight(1f),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Bottom,
-                    ) {
-                        Text(
-                            count.toString(),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .height((6 + 46f * count / maxDay).dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(MaterialTheme.colorScheme.primary),
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            label,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        )
-                    }
-                }
+                Text(
+                    count.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                )
+                Spacer(Modifier.height(2.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height((6 + 46f * count / maxDay).dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(color),
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
             }
         }
     }
@@ -552,6 +646,8 @@ private sealed interface Line {
     data class Header(val label: String) : Line
     data class Cry(val e: CryEvent) : Line
     data class Feed(val e: FeedingEvent) : Line
+    data class Diaper(val e: DiaperEvent) : Line
+    data class Tummy(val e: TummyTimeEvent) : Line
 }
 
 private data class HistorySummary(
@@ -562,10 +658,16 @@ private data class HistorySummary(
     val criesToday: Int,
     val criesYesterday: Int,
     val feedsToday: Int,
+    val diapersToday: Int,
+    val poopsToday: Int,
+    val tummyToday: Int,
+    val tummyGoal: Int,
     val topReasonToday: CryReason?,
     val peakHour: Int?,
     val avgFeedGapMs: Long?,
     val perDay: List<Pair<String, Int>>,
+    val diaperPerDay: List<Pair<String, Int>>,
+    val tummyPerDay: List<Pair<String, Int>>,
     val perHour: List<Int>,     // 24 slots, cries started in each hour-of-day
 )
 
@@ -577,6 +679,8 @@ private fun reasonOf(e: CryEvent, labels: List<CryReason>): CryReason? {
 private fun computeSummary(
     cries: List<CryEvent>,
     feedings: List<FeedingEvent>,
+    diapers: List<DiaperEvent>,
+    tummy: List<TummyTimeEvent>,
     labels: List<CryReason>,
     profile: BabyProfile,
     now: Long,
@@ -618,6 +722,16 @@ private fun computeSummary(
         val end = start + dayMs
         dayShortFormat().format(Date(start)) to cries.count { it.timestamp in start until end }
     }
+    val diaperPerDay = (6 downTo 0).map { back ->
+        val start = todayStart - back * dayMs
+        val end = start + dayMs
+        dayShortFormat().format(Date(start)) to diapers.count { it.timestamp in start until end }
+    }
+    val tummyPerDay = (6 downTo 0).map { back ->
+        val start = todayStart - back * dayMs
+        val end = start + dayMs
+        dayShortFormat().format(Date(start)) to tummy.count { it.timestamp in start until end }
+    }
 
     return HistorySummary(
         lastFeedAgoMs = lastFeed?.let { now - it },
@@ -627,24 +741,40 @@ private fun computeSummary(
         criesToday = cries.count { it.timestamp >= todayStart },
         criesYesterday = cries.count { it.timestamp in (todayStart - dayMs) until todayStart },
         feedsToday = feedings.count { it.timestamp >= todayStart },
+        diapersToday = diapers.count { it.timestamp >= todayStart },
+        poopsToday = diapers.count {
+            it.timestamp >= todayStart && DiaperType.fromNameOrNull(it.type)?.hasStool == true
+        },
+        tummyToday = tummy.count { it.timestamp >= todayStart },
+        tummyGoal = TummyTime.dailyGoal(profile.ageDays(now)),
         topReasonToday = topReasonToday,
         peakHour = peakHour,
         avgFeedGapMs = avgFeedGapMs,
         perDay = perDay,
+        diaperPerDay = diaperPerDay,
+        tummyPerDay = tummyPerDay,
         perHour = perHour.toList(),
     )
 }
 
-private fun buildTimeline(cries: List<CryEvent>, feedings: List<FeedingEvent>, now: Long): List<Line> {
-    val entries = ArrayList<Pair<Long, Line>>(cries.size + feedings.size)
+private fun buildTimeline(
+    cries: List<CryEvent>,
+    feedings: List<FeedingEvent>,
+    diapers: List<DiaperEvent>,
+    tummy: List<TummyTimeEvent>,
+    now: Long,
+): List<Line> {
+    val entries = ArrayList<Pair<Long, Line>>(cries.size + feedings.size + diapers.size + tummy.size)
     cries.forEach { entries += it.timestamp to Line.Cry(it) }
     feedings.forEach { entries += it.timestamp to Line.Feed(it) }
+    diapers.forEach { entries += it.timestamp to Line.Diaper(it) }
+    tummy.forEach { entries += it.timestamp to Line.Tummy(it) }
     entries.sortByDescending { it.first }
 
     val out = ArrayList<Line>()
     val today = startOfDay(now)
     var lastDay = Long.MIN_VALUE
-    for ((ts, line) in entries.take(80)) {
+    for ((ts, line) in entries.take(300)) {
         val ds = startOfDay(ts)
         if (ds != lastDay) {
             out += Line.Header(dayLabel(ds, today))

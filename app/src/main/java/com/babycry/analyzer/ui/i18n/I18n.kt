@@ -55,6 +55,32 @@ private val EN: Map<String, String> = mapOf(
     "Πότε να ανησυχήσω;" to "When should I worry?",
     "Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή. Αν ανησυχείς για την υγεία του μωρού, ρώτησε παιδίατρο." to
         "Informational aid, not medical advice. If you're worried about your baby's health, ask a pediatrician.",
+
+    // ---- Diaper changes ----
+    "Αλλαγή πάνας" to "Diaper change",
+    "Τι είχε η πάνα; Βοηθά να βλέπεις μοτίβα (π.χ. πόσο συχνά κάνει κακά)." to
+        "What was in the diaper? Helps you spot patterns (e.g. how often baby poops).",
+    "Βρεγμένη (πιπί)" to "Wet (pee)",
+    "Κακά" to "Poop",
+    "Βρεγμένη + κακά" to "Wet + poop",
+    "Πάνα" to "Diaper",
+    "Αλλαγές πάνας" to "Diaper changes",
+    "Πάνες ανά ημέρα (τελευταίες 7)" to "Diapers per day (last 7)",
+    "Καταγράφηκε η αλλαγή πάνας." to "Diaper change logged.",
+    // Report
+    "Πάνες" to "Diapers",
+    "Σύνολο αλλαγών" to "Total changes",
+    "Μέσος όρος αλλαγών/ημέρα" to "Avg changes/day",
+    "Κακά (σύνολο)" to "Poops (total)",
+    "Κακά ανά ημέρα (μ.ο.)" to "Poops per day (avg)",
+    "Πάνες ανά ημέρα (τελευταίες 14)" to "Diapers per day (last 14)",
+    // Settings: pediatrician-confirmed colic/gas (per-baby prior)
+    "Επιβεβαιωμένοι κολικοί/αέρια από γιατρό" to "Doctor-confirmed colic/gas",
+    "Αν ο παιδίατρος έχει επιβεβαιώσει κολικούς ή αέρια στο μωρό, δίνουμε μεγαλύτερο βάρος στο κοιλόπονο/ρέψιμο — ιδίως ανάμεσα στα γεύματα. Ισχύει για το ενεργό μωρό." to
+        "If a pediatrician has confirmed colic or gas for your baby, we give more weight to belly-pain/burping — especially between feeds. Applies to the active baby.",
+    "Προαιρετικό — μόνο αν το έχει πει ο παιδίατρος. Δίνει μεγαλύτερο βάρος στο κοιλόπονο/αέρια. Αλλάζει όποτε θες από τις Ρυθμίσεις." to
+        "Optional — only if your pediatrician has said so. Gives more weight to belly-pain/gas. You can change it anytime in Settings.",
+
     "Ηχογράφηση" to "Record",
     "Ακούω το μωρό..." to "Listening to baby...",
     "Κράτα το κινητό κοντά του" to "Hold the phone close to baby",
@@ -363,8 +389,8 @@ private val EN: Map<String, String> = mapOf(
     "Αποθηκευμένα κλάματα" to "Saved cries",
     "Οι επιβεβαιωμένες ηχογραφήσεις με την αιτία τους. Πάτησε ▶ για να τις ακούσεις ξανά." to
         "Your confirmed recordings with their cause. Tap ▶ to play them again.",
-    "Δεν υπάρχουν ακόμη αποθηκευμένες ηχογραφήσεις. Μόλις επιβεβαιώσεις γιατί έκλαψε το μωρό, η ηχογράφηση αποθηκεύεται εδώ (εφόσον είναι ενεργή η «Αποθήκευση ηχογραφήσεων» πιο πάνω)." to
-        "No saved recordings yet. Once you confirm why baby cried, the recording is saved here (as long as \"Save recordings\" is on above).",
+    "Δεν υπάρχουν ακόμη αποθηκευμένες ηχογραφήσεις. Μόλις επιβεβαιώσεις γιατί έκλαψε το μωρό, η ηχογράφηση αποθηκεύεται εδώ αυτόματα." to
+        "No saved recordings yet. Once you confirm why baby cried, the recording is saved here automatically.",
 
     // ---- Feeding reminder (notification channel) ----
     "Υπενθυμίσεις ταΐσματος" to "Feeding reminders",
@@ -379,4 +405,87 @@ private val EN: Map<String, String> = mapOf(
     "Πιο δύσκολη ημέρα" to "Busiest day",
     "Πιο σκούρο = περισσότερα κλάματα εκείνη την ώρα." to "Darker = more cries in that hour.",
     "Κλάματα ανά ημέρα (τελευταίες 14)" to "Cries per day (last 14)",
+
+    // ---- Tummy time: home card + logging ----
+    "Οδηγός" to "Guide",
+    "Έκανα Tummy Time" to "I did Tummy Time",
+    "Καταγράφηκε το tummy time. Μπράβο!" to "Tummy time logged. Nice!",
+
+    // ---- Tummy time: history & report ----
+    "Tummy time ανά ημέρα (τελευταίες 7)" to "Tummy time per day (last 7)",
+    "Σύνολο συνεδριών" to "Total sessions",
+    "Μέσος όρος/ημέρα" to "Average/day",
+    "Tummy time ανά ημέρα (τελευταίες 14)" to "Tummy time per day (last 14)",
+
+    // ---- Tummy time: reminder (settings + notification) ----
+    "Υπενθυμίσεις" to "Reminders",
+    "Υπενθύμιση Tummy Time" to "Tummy Time reminder",
+    "Δύο ήπιες ειδοποιήσεις την ημέρα (πρωί & απόγευμα), ανάλογα με την ηλικία, με το πόσες φορές απομένουν." to
+        "Two gentle notifications a day (morning & afternoon), based on age, with how many sessions are left.",
+    "Πρωινή υπενθύμιση" to "Morning reminder",
+    "Απογευματινή υπενθύμιση" to "Afternoon reminder",
+    "Υπενθυμίσεις tummy time" to "Tummy time reminders",
+    "Δύο ήπιες υπενθυμίσεις την ημέρα για tummy time, ανάλογα με την ηλικία." to
+        "Two gentle tummy time reminders a day, based on baby's age.",
+
+    // ---- Tummy time: info screen ----
+    "Χρόνος που το μωρό είναι ξύπνιο και ξαπλωμένο μπρούμυτα, υπό επίβλεψη. Δυναμώνει αυχένα, ώμους και κορμό και βοηθά στην κινητική ανάπτυξη (και προλαμβάνει το πλατύ/επίπεδο κεφαλάκι)." to
+        "Time when baby is awake and lying on their tummy, supervised. It strengthens the neck, shoulders and trunk and supports motor development (and helps prevent a flat head).",
+    "Μέρα 1" to "Day 1",
+    "Ξεκίνα μόλις γυρίσεις σπίτι" to "Start once you're home",
+    "Σύνολο/ημέρα έως ~7 εβδομάδες (AAP)" to "Total/day by ~7 weeks (AAP)",
+    "Σύνολο/ημέρα έως 3–6 μηνών" to "Total/day by 3–6 months",
+    "WHO: ελάχιστο/ημέρα" to "WHO: minimum/day",
+    "Πρόγραμμα ανά ηλικία" to "Program by age",
+    "Οι «φορές/ημέρα» είναι ενδεικτικές (σύνολο ÷ διάρκεια ανά φορά)· οι πηγές ορίζουν κυρίως το σύνολο των λεπτών." to
+        "The \"times/day\" are indicative (total ÷ per-session length); sources mainly define the total minutes.",
+    "Φορές/μέρα" to "Times/day",
+    "Διάρκεια/φορά" to "Duration/session",
+    // Age labels
+    "Νεογέννητο · 1η εβδομάδα" to "Newborn · week 1",
+    "Εβδομάδες 2–4" to "Weeks 2–4",
+    "~7 εβδομάδες" to "~7 weeks",
+    "Μήνας 2" to "Month 2",
+    "Μήνας 3" to "Month 3",
+    "Μήνες 4–5" to "Months 4–5",
+    "Μήνας 6+ (μέχρι το μπουσούλημα)" to "Month 6+ (until crawling)",
+    // Duration / total phrases (word-based ones only)
+    "λίγα λεπτά" to "a few minutes",
+    "σταδιακή αύξηση" to "gradual increase",
+    "όσο αντέχει" to "as long as baby tolerates",
+    // What to expect
+    "Ξεκίνα από την 1η μέρα στο σπίτι — μετράει και η αγκαλιά στο στήθος (tummy-to-chest)." to
+        "Start from day 1 at home — chest cuddles (tummy-to-chest) count too.",
+    "«Λίγο & συχνά» — π.χ. μετά την αλλαγή πάνας ή μόλις ξυπνήσει." to
+        "\"Little & often\" — e.g. after a diaper change or right after waking.",
+    "Ορόσημο AAP: περίπου 15–30′ συνολικά μέσα στην ημέρα." to
+        "AAP milestone: about 15–30′ total across the day.",
+    "Σηκώνει πιο ψηλά και πιο σταθερά το κεφάλι." to "Lifts the head higher and more steadily.",
+    "Στηρίζεται στους πήχεις και κρατά το κεφάλι 45–90°." to
+        "Props on the forearms and holds the head at 45–90°.",
+    "Αρχίζει να γυρίζει από μπρούμυτα σε ανάσκελα." to "Starts rolling from tummy to back.",
+    "Παιχνίδι, κύλισμα, άπλωμα — συνέχισε μέχρι να μπουσουλήσει." to
+        "Play, rolling, reaching — keep going until baby crawls.",
+    // Safety & practical
+    "Ασφάλεια & πρακτικά" to "Safety & practical tips",
+    "Πάντα ξύπνιο και υπό επίβλεψη, σε επίπεδη σταθερή επιφάνεια." to
+        "Always awake and supervised, on a flat firm surface.",
+    "Ο ύπνος πάντα ανάσκελα (Back to Sleep) — το tummy time είναι μόνο για ξύπνιες ώρες παιχνιδιού." to
+        "Sleep is always on the back (Back to Sleep) — tummy time is only for awake playtime.",
+    "Καλή στιγμή: μετά την αλλαγή πάνας ή μόλις ξυπνήσει — όχι με γεμάτο στομάχι." to
+        "Good moment: after a diaper change or right after waking — not on a full stomach.",
+    "Αν δυσανασχετεί, δοκίμασε πλάγια θέση ή ένα ρολό πετσέτας κάτω από τις μασχάλες." to
+        "If baby fusses, try a side position or a rolled towel under the armpits.",
+    "Σταμάτα αν κουραστεί ή κλάψει· ξαναδοκίμασε αργότερα. «Λίγο & συχνά»." to
+        "Stop if baby tires or cries; try again later. \"Little & often\".",
+    "Συνέχισε καθημερινά μέχρι να μπουσουλήσει." to "Keep it up daily until baby crawls.",
+    // Home-screen explainer + sources
+    "Στην αρχική οθόνη" to "On the home screen",
+    "Πάτα «Έκανα Tummy Time» κάθε φορά που το κάνεις. Θα βλέπεις πόσες φορές έχεις κάνει σήμερα και πόσες απομένουν για τον στόχο της ηλικίας — και θα σου το θυμίζουμε δύο φορές την ημέρα (πρωί & απόγευμα)." to
+        "Tap \"I did Tummy Time\" each time you do it. You'll see how many you've done today and how many are left for the age goal — and we'll remind you twice a day (morning & afternoon).",
+    "Γιατί διαφέρουν οι πηγές" to "Why sources differ",
+    "WHO: τουλάχιστον 30′/ημέρα (ελάχιστο). AAP & Pathways: σταδιακά προς ~60′/ημέρα έως 3–6 μηνών. NHS: πιο συντηρητικά, ~20–30′/ημέρα έως 3–4 μηνών. Όλες συμφωνούν στο βασικό: ξεκίνα νωρίς, «λίγο & συχνά», κάθε μέρα, μέχρι το μπουσούλημα." to
+        "WHO: at least 30′/day (minimum). AAP & Pathways: gradually toward ~60′/day by 3–6 months. NHS: more conservative, ~20–30′/day by 3–4 months. All agree on the basics: start early, \"little & often\", every day, until crawling.",
+    "Πηγές: AAP/HealthyChildren, Pathways.org, NHS, WHO. Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή." to
+        "Sources: AAP/HealthyChildren, Pathways.org, NHS, WHO. Informational aid, not medical advice.",
 )

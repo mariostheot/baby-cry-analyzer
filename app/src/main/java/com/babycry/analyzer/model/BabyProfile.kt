@@ -11,6 +11,12 @@ data class BabyProfile(
     val birthMillis: Long? = null,
     /** Stable local id, so we can support more than one baby (e.g. siblings/twins). */
     val id: String = "",
+    /**
+     * Set when a pediatrician has confirmed colic/gas for this baby. When true, the context
+     * prior gives extra weight to belly-pain / burping (especially between feeds), because
+     * for a diagnosed baby those causes really are more likely. Per-baby, never uploaded.
+     */
+    val colicConfirmed: Boolean = false,
 ) {
     val hasName: Boolean get() = name.isNotBlank()
 

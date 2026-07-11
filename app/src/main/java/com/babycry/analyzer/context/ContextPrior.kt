@@ -47,6 +47,7 @@ object ContextPrior {
         hourOfDay: Int,
         ageMonths: Int? = null,
         ageDays: Int? = null,
+        colicConfirmed: Boolean = false,
     ): FloatArray {
         val m = FloatArray(CryReason.canonicalOrder.size) { 1f }
         val idxHungry = CryReason.HUNGRY.ordinal
@@ -65,6 +66,20 @@ object ContextPrior {
                 ratio < 0.8f -> 0.9f
                 ratio < 1.1f -> 1.4f                                   // around due time
                 else -> (1.4f + (ratio - 1.1f) * 1.6f).coerceAtMost(2.6f) // overdue
+            }
+
+            // Right after a feed the baby has (almost certainly) not gone hungry again, so if it
+            // still cries the usual culprits are trapped air (needs to burp) or gas/colic. We
+            // lift those while hunger is down, and fade the boost as we approach the next feed.
+            when {
+                ratio < 0.4f -> {           // just fed: burping is the classic post-feed cry
+                    m[idxBurp] *= 1.7f
+                    m[idxBelly] *= 1.3f
+                }
+                ratio < 0.8f -> {           // still between feeds: milder nudge
+                    m[idxBurp] *= 1.3f
+                    m[idxBelly] *= 1.15f
+                }
             }
         }
 
@@ -88,6 +103,13 @@ object ContextPrior {
                     m[idxBurp] *= 0.85f
                 }
             }
+        }
+
+        // Pediatrician-confirmed colic/gas for THIS baby: those causes really are more likely,
+        // so give belly-pain/burping a firmer boost on top of everything above.
+        if (colicConfirmed) {
+            m[idxBelly] *= 1.6f
+            m[idxBurp] *= 1.25f
         }
 
         return m

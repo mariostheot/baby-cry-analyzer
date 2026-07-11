@@ -6,6 +6,15 @@
          the real reason (once they've figured out why the baby cried). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- The "why did it cry?" reminder must fire a few minutes later even while the phone is
+         idle. WorkManager gets deferred by Doze/battery saving (can be tens of minutes late),
+         so we use an exact alarm. USE_EXACT_ALARM is auto-granted (33+); SCHEDULE_EXACT_ALARM
+         covers 31-32 where it is granted on install. -->
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+
     <!-- We only record from the microphone; a mic is required for the core feature. -->
     <uses-feature
         android:name="android.hardware.microphone"
@@ -29,6 +38,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Fires the delayed "why did it cry?" reminder posted by an exact alarm. -->
+        <receiver
+            android:name=".notify.ConfirmAlarmReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

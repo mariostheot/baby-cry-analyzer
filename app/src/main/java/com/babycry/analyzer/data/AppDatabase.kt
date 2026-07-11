@@ -9,8 +9,14 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [CryEvent::class, FeedbackExample::class, FeedingEvent::class],
-    version = 2,
+    entities = [
+        CryEvent::class,
+        FeedbackExample::class,
+        FeedingEvent::class,
+        DiaperEvent::class,
+        TummyTimeEvent::class,
+    ],
+    version = 4,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -18,6 +24,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun cryEventDao(): CryEventDao
     abstract fun feedbackDao(): FeedbackDao
     abstract fun feedingDao(): FeedingDao
+    abstract fun diaperDao(): DiaperDao
+    abstract fun tummyDao(): TummyDao
 
     companion object {
         @Volatile
@@ -33,13 +41,37 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // v2 -> v3: add diaper-change logging. New table only -> existing data is untouched.
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `diaper_events` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`timestamp` INTEGER NOT NULL, " +
+                        "`type` TEXT NOT NULL)",
+                )
+            }
+        }
+
+        // v3 -> v4: add tummy-time logging. New table only -> existing data is untouched.
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `tummy_events` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`timestamp` INTEGER NOT NULL)",
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "babycry.db",
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+                    .also { instance = it }
             }
     }
 }

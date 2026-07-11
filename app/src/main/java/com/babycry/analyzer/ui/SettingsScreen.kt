@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -41,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import com.babycry.analyzer.ui.i18n.AppLang
@@ -66,13 +70,21 @@ fun SettingsScreen(
     onExportReport: () -> Unit,
     onBackup: () -> Unit,
     onRestore: () -> Unit,
+    onExportDataset: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val profile by viewModel.profile.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
     val personalization by viewModel.personalizationEnabled.collectAsState()
     val language by viewModel.language.collectAsState()
+    val tummyReminderOn by viewModel.tummyReminderEnabled.collectAsState()
+    val tummyReminderHourAm by viewModel.tummyReminderHourAm.collectAsState()
+    val tummyReminderHourPm by viewModel.tummyReminderHourPm.collectAsState()
     val focus = LocalFocusManager.current
+    val context = LocalContext.current
+
+    var dataset by remember { mutableStateOf<Pair<Int, Long>?>(null) }
+    LaunchedEffect(Unit) { dataset = viewModel.datasetInfo() }
 
     var name by remember(profile) { mutableStateOf(profile.name) }
     var birth by remember(profile) { mutableStateOf(profile.birthMillis) }
@@ -243,12 +255,64 @@ fun SettingsScreen(
                     checked = personalization,
                     onCheckedChange = viewModel::setPersonalization,
                 )
+                Divider(Modifier.padding(vertical = 12.dp))
+                ToggleRow(
+                    title = tr("Επιβεβαιωμένοι κολικοί/αέρια από γιατρό"),
+                    subtitle = tr("Αν ο παιδίατρος έχει επιβεβαιώσει κολικούς ή αέρια στο μωρό, δίνουμε μεγαλύτερο βάρος στο κοιλόπονο/ρέψιμο — ιδίως ανάμεσα στα γεύματα. Ισχύει για το ενεργό μωρό."),
+                    checked = profile.colicConfirmed,
+                    onCheckedChange = viewModel::setColicConfirmed,
+                )
                 Spacer(Modifier.height(12.dp))
                 Text(
                     tr("Η εφαρμογή λαμβάνει πάντα υπόψη το τελευταίο τάισμα, την ώρα και την ηλικία του μωρού για πιο ακριβή εκτίμηση."),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // ---- Reminders ----
+        SectionTitle(tr("Υπενθυμίσεις"))
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                ToggleRow(
+                    title = tr("Υπενθύμιση Tummy Time"),
+                    subtitle = tr("Δύο ήπιες ειδοποιήσεις την ημέρα (πρωί & απόγευμα), ανάλογα με την ηλικία, με το πόσες φορές απομένουν."),
+                    checked = tummyReminderOn,
+                    onCheckedChange = viewModel::setTummyReminderEnabled,
+                )
+                if (tummyReminderOn) {
+                    Divider(Modifier.padding(vertical = 8.dp))
+                    ActionRow(
+                        Icons.Filled.Schedule,
+                        tr("Πρωινή υπενθύμιση"),
+                        "%02d:00".format(tummyReminderHourAm),
+                    ) {
+                        android.app.TimePickerDialog(
+                            context,
+                            { _, h, _ -> viewModel.setTummyReminderHourAm(h) },
+                            tummyReminderHourAm,
+                            0,
+                            true,
+                        ).show()
+                    }
+                    Divider(Modifier.padding(vertical = 8.dp))
+                    ActionRow(
+                        Icons.Filled.Schedule,
+                        tr("Απογευματινή υπενθύμιση"),
+                        "%02d:00".format(tummyReminderHourPm),
+                    ) {
+                        android.app.TimePickerDialog(
+                            context,
+                            { _, h, _ -> viewModel.setTummyReminderHourPm(h) },
+                            tummyReminderHourPm,
+                            0,
+                            true,
+                        ).show()
+                    }
+                }
             }
         }
 
@@ -277,6 +341,27 @@ fun SettingsScreen(
                     tr("Επαναφορά από backup"),
                     tr("Φόρτωση δεδομένων από αρχείο"),
                     onRestore,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // ---- Personal dataset (export only; recordings are always saved automatically) ----
+        SectionTitle(tr("Δικό μου dataset"))
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Text(
+                    dataset?.let { (n, bytes) -> datasetInfoText(n, bytes) } ?: tr("Υπολογισμός..."),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+                Divider(Modifier.padding(vertical = 8.dp))
+                ActionRow(
+                    Icons.Filled.Archive,
+                    tr("Εξαγωγή dataset (zip)"),
+                    tr("Εξάγει τις επιβεβαιωμένες ηχογραφήσεις + labels.csv για εκπαίδευση. Μένουν στη συσκευή σου."),
+                    onExportDataset,
                 )
             }
         }
@@ -463,4 +548,15 @@ private fun ToggleRow(
         Spacer(Modifier.size(12.dp))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
+}
+
+private fun datasetInfoText(n: Int, bytes: Long): String = when (currentAppLang) {
+    AppLang.EN -> "Stored: $n recordings • ${formatBytes(bytes)}"
+    AppLang.EL -> "Αποθηκευμένα: $n ηχογραφήσεις • ${formatBytes(bytes)}"
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1_048_576L -> "%.1f MB".format(bytes / 1_048_576.0)
+    bytes >= 1024L -> "%.0f KB".format(bytes / 1024.0)
+    else -> "$bytes B"
 }

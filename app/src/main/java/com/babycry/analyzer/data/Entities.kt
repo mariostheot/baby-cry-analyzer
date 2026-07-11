@@ -51,3 +51,24 @@ data class FeedingEvent(
     val timestamp: Long,
     val note: String? = null,
 )
+
+/**
+ * A logged diaper change. [type] is a [com.babycry.analyzer.model.DiaperType] name
+ * (WET/DIRTY/MIXED) so we can chart poop frequency separately from wet changes.
+ */
+@Entity(tableName = "diaper_events")
+data class DiaperEvent(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val timestamp: Long,
+    val type: String,
+)
+
+/**
+ * One logged tummy-time session (count-based: each tap = one session the parent did with the
+ * baby). Drives the daily "X/Y sessions" goal, history and the age-based reminder.
+ */
+@Entity(tableName = "tummy_events")
+data class TummyTimeEvent(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val timestamp: Long,
+)

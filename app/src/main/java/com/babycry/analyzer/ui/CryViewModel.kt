@@ -9,14 +9,18 @@ import com.babycry.analyzer.audio.SoothingPlayer
 import com.babycry.analyzer.audio.SoundType
 import com.babycry.analyzer.data.CryEvent
 import com.babycry.analyzer.data.CryRepository
+import com.babycry.analyzer.data.DiaperEvent
 import com.babycry.analyzer.data.FeedingEvent
 import com.babycry.analyzer.data.StatsSummary
+import com.babycry.analyzer.data.TummyTimeEvent
 import com.babycry.analyzer.ml.CryAnalysis
 import com.babycry.analyzer.model.AnalysisEngine
 import com.babycry.analyzer.model.BabyProfile
 import com.babycry.analyzer.model.CryReason
+import com.babycry.analyzer.model.DiaperType
 import com.babycry.analyzer.notify.ConfirmReminder
 import com.babycry.analyzer.notify.FeedReminder
+import com.babycry.analyzer.notify.TummyReminder
 import com.babycry.analyzer.ui.i18n.AppLang
 import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.trS
@@ -89,9 +93,6 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     private val _pending = MutableStateFlow<CryEvent?>(null)
     val pendingConfirmation: StateFlow<CryEvent?> = _pending.asStateFlow()
 
-    private val _saveClips = MutableStateFlow(repo.isSaveClipsEnabled())
-    val saveClipsEnabled: StateFlow<Boolean> = _saveClips.asStateFlow()
-
     private val _language = MutableStateFlow(repo.getLanguage())
     val language: StateFlow<AppLang> = _language.asStateFlow()
 
@@ -105,6 +106,21 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     val recentFeedings: StateFlow<List<FeedingEvent>> = repo.recentFeedings()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val recentDiapers: StateFlow<List<DiaperEvent>> = repo.recentDiapers()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val recentTummy: StateFlow<List<TummyTimeEvent>> = repo.recentTummy()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _tummyReminderEnabled = MutableStateFlow(repo.isTummyReminderEnabled())
+    val tummyReminderEnabled: StateFlow<Boolean> = _tummyReminderEnabled.asStateFlow()
+
+    private val _tummyReminderHourAm = MutableStateFlow(repo.tummyReminderHourAm())
+    val tummyReminderHourAm: StateFlow<Int> = _tummyReminderHourAm.asStateFlow()
+
+    private val _tummyReminderHourPm = MutableStateFlow(repo.tummyReminderHourPm())
+    val tummyReminderHourPm: StateFlow<Int> = _tummyReminderHourPm.asStateFlow()
 
     init {
         currentAppLang = repo.getLanguage()
@@ -139,6 +155,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     private fun startListening() {
         cancelRequested = false
         stopSoothing() // don't let the soothing sound bleed into the recording
+        player.stop()  // stop any in-progress replay so it doesn't overlap / leak into the mic
         viewModelScope.launch {
             _home.update {
                 HomeUiState(phase = Phase.RECORDING, level = 0f)
@@ -274,11 +291,6 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setSaveClips(enabled: Boolean) {
-        repo.setSaveClips(enabled)
-        _saveClips.value = enabled
-    }
-
     suspend fun datasetInfo(): Pair<Int, Long> = repo.datasetInfo()
 
     suspend fun writeDatasetZip(out: OutputStream): Int = repo.writeDatasetZip(out)
@@ -288,6 +300,50 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
             repo.logFeeding()
             _home.update { it.copy(message = trS("Καταγράφηκε το τάισμα.")) }
             scheduleFeedReminder()
+        }
+    }
+
+    fun logDiaper(type: DiaperType) {
+        viewModelScope.launch {
+            repo.logDiaper(type)
+            _home.update { it.copy(message = trS("Καταγράφηκε η αλλαγή πάνας.")) }
+        }
+    }
+
+    fun logTummy() {
+        viewModelScope.launch {
+            repo.logTummy()
+            _home.update { it.copy(message = trS("Καταγράφηκε το tummy time. Μπράβο!")) }
+        }
+    }
+
+    /** Age-appropriate tummy-time sessions/day for the active baby. */
+    fun tummyGoal(): Int = repo.tummyDailyGoal()
+
+    fun scheduleTummyReminder() {
+        TummyReminder.schedule(getApplication<Application>(), force = false)
+    }
+
+    fun setTummyReminderEnabled(enabled: Boolean) {
+        repo.setTummyReminderEnabled(enabled)
+        _tummyReminderEnabled.value = enabled
+        if (enabled) TummyReminder.schedule(getApplication<Application>(), force = true)
+        else TummyReminder.cancel(getApplication<Application>())
+    }
+
+    fun setTummyReminderHourAm(hour: Int) {
+        repo.setTummyReminderHourAm(hour)
+        _tummyReminderHourAm.value = repo.tummyReminderHourAm()
+        if (_tummyReminderEnabled.value) {
+            TummyReminder.schedule(getApplication<Application>(), force = true)
+        }
+    }
+
+    fun setTummyReminderHourPm(hour: Int) {
+        repo.setTummyReminderHourPm(hour)
+        _tummyReminderHourPm.value = repo.tummyReminderHourPm()
+        if (_tummyReminderEnabled.value) {
+            TummyReminder.schedule(getApplication<Application>(), force = true)
         }
     }
 
@@ -347,6 +403,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Start a soothing sound; [minutes] == 0 means play until stopped. */
     fun playSoothing(type: SoundType, minutes: Int) {
+        player.stop() // don't overlap a cry replay with the soothing sound
         soothingJob?.cancel()
         soother.start(type)
         _soothing.value = SoothingUiState(playing = type, remainingSec = minutes * 60)
@@ -409,9 +466,9 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** First-run: save the baby profile and never show the welcome screen again. */
-    fun completeOnboarding(name: String, birthMillis: Long?) {
+    fun completeOnboarding(name: String, birthMillis: Long?, colicConfirmed: Boolean = false) {
         viewModelScope.launch {
-            repo.addProfile(name.trim(), birthMillis)
+            repo.addProfile(name.trim(), birthMillis, colicConfirmed)
             repo.setOnboardingComplete()
             refreshProfiles()
             _onboardingComplete.value = true
@@ -471,6 +528,14 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         _personalizationEnabled.value = enabled
     }
 
+    /** Toggle pediatrician-confirmed colic/gas for the active baby (per-baby context prior). */
+    fun setColicConfirmed(enabled: Boolean) {
+        viewModelScope.launch {
+            repo.setColicConfirmed(enabled)
+            refreshProfiles()
+        }
+    }
+
     fun resetPersonalization() {
         viewModelScope.launch {
             repo.resetPersonalization()
@@ -495,7 +560,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     private companion object {
         const val MAX_RECORD_MS = 7000
         const val MIN_LISTEN_MS = 2500 // capture at least this much before auto-finishing
-        const val REMINDER_DELAY_MIN = 4L // ask "why did it cry?" a few minutes later
+        const val REMINDER_DELAY_MIN = 15L // ask "why did it cry?" ~15 min later (once the cause is clear)
 
         private fun recordedMessage(reason: CryReason): String = when (currentAppLang) {
             AppLang.EN -> "Recorded: ${trS(reason.displayName)}. Thanks!"

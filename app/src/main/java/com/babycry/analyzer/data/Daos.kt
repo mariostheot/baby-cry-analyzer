@@ -64,11 +64,51 @@ interface FeedingDao {
     suspend fun last(): FeedingEvent?
 
     @Query("SELECT * FROM feeding_events ORDER BY timestamp DESC LIMIT :limit")
-    fun recent(limit: Int = 50): Flow<List<FeedingEvent>>
+    fun recent(limit: Int = 200): Flow<List<FeedingEvent>>
 
     @Query("SELECT * FROM feeding_events ORDER BY timestamp DESC")
     suspend fun allList(): List<FeedingEvent>
 
     @Query("DELETE FROM feeding_events")
+    suspend fun clear()
+}
+
+@Dao
+interface DiaperDao {
+    @Insert
+    suspend fun insert(event: DiaperEvent): Long
+
+    @Query("SELECT * FROM diaper_events ORDER BY timestamp DESC LIMIT 1")
+    suspend fun last(): DiaperEvent?
+
+    @Query("SELECT * FROM diaper_events ORDER BY timestamp DESC LIMIT :limit")
+    fun recent(limit: Int = 200): Flow<List<DiaperEvent>>
+
+    @Query("SELECT * FROM diaper_events ORDER BY timestamp DESC")
+    suspend fun allList(): List<DiaperEvent>
+
+    @Query("DELETE FROM diaper_events")
+    suspend fun clear()
+}
+
+@Dao
+interface TummyDao {
+    @Insert
+    suspend fun insert(event: TummyTimeEvent): Long
+
+    @Query("SELECT * FROM tummy_events ORDER BY timestamp DESC LIMIT 1")
+    suspend fun last(): TummyTimeEvent?
+
+    @Query("SELECT * FROM tummy_events ORDER BY timestamp DESC LIMIT :limit")
+    fun recent(limit: Int = 200): Flow<List<TummyTimeEvent>>
+
+    @Query("SELECT * FROM tummy_events ORDER BY timestamp DESC")
+    suspend fun allList(): List<TummyTimeEvent>
+
+    /** How many sessions were logged since [since] (used for "done today"). */
+    @Query("SELECT COUNT(*) FROM tummy_events WHERE timestamp >= :since")
+    suspend fun countSince(since: Long): Int
+
+    @Query("DELETE FROM tummy_events")
     suspend fun clear()
 }

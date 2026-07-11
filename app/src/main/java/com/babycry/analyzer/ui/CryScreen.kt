@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,13 +27,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BabyChangingStation
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.SelfImprovement
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -65,9 +70,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.babycry.analyzer.data.CryEvent
+import com.babycry.analyzer.data.TummyTimeEvent
 import com.babycry.analyzer.model.AnalysisEngine
+import com.babycry.analyzer.model.DiaperType
 import com.babycry.analyzer.ml.CryAnalysis
 import com.babycry.analyzer.model.CryReason
+import com.babycry.analyzer.model.TummyTime
+import java.util.Calendar
 import com.babycry.analyzer.ui.i18n.AppLang
 import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.tr
@@ -81,12 +90,15 @@ fun HomeScreen(
     onCancel: () -> Unit,
     onSoothe: () -> Unit,
     onSafety: () -> Unit,
+    onTummyGuide: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.home.collectAsState()
     val profile by viewModel.profile.collectAsState()
     val pending by viewModel.pendingConfirmation.collectAsState()
     val soothing by viewModel.soothing.collectAsState()
+    val tummy by viewModel.recentTummy.collectAsState()
+    var showDiaper by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -160,18 +172,37 @@ fun HomeScreen(
             Spacer(Modifier.height(16.dp))
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FilledTonalButton(onClick = { viewModel.logFeeding() }) {
-                Icon(Icons.Filled.Restaurant, contentDescription = null)
-                Spacer(Modifier.size(8.dp))
-                Text(tr("Τάισμα"))
-            }
-            FilledTonalButton(onClick = onSoothe) {
-                Icon(Icons.Filled.MusicNote, contentDescription = null)
-                Spacer(Modifier.size(8.dp))
-                Text(tr("Ηρέμησέ το"))
-            }
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            QuickAction(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Filled.Restaurant,
+                label = tr("Τάισμα"),
+                onClick = { viewModel.logFeeding() },
+            )
+            QuickAction(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Filled.BabyChangingStation,
+                label = tr("Αλλαγή πάνας"),
+                onClick = { showDiaper = true },
+            )
+            QuickAction(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Filled.MusicNote,
+                label = tr("Ηρέμησέ το"),
+                onClick = onSoothe,
+            )
         }
+
+        Spacer(Modifier.height(12.dp))
+        TummyTimeCard(
+            doneToday = tummyDoneToday(tummy),
+            goal = TummyTime.dailyGoal(profile.ageDays()),
+            onLog = { viewModel.logTummy() },
+            onOpenGuide = onTummyGuide,
+        )
 
         Spacer(Modifier.height(8.dp))
         TextButton(onClick = onSafety) { Text(tr("Πότε να ανησυχήσω;")) }
@@ -183,6 +214,166 @@ fun HomeScreen(
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
         )
+    }
+
+    if (showDiaper) {
+        AlertDialog(
+            onDismissRequest = { showDiaper = false },
+            title = { Text(tr("Αλλαγή πάνας")) },
+            text = {
+                Column {
+                    Text(
+                        tr("Τι είχε η πάνα; Βοηθά να βλέπεις μοτίβα (π.χ. πόσο συχνά κάνει κακά)."),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    DiaperType.entries.forEach { t ->
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.logDiaper(t)
+                                showDiaper = false
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
+                        ) {
+                            Text("${t.emoji}  ${tr(t.displayName)}", maxLines = 1)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showDiaper = false }) { Text(tr("Άκυρο")) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun QuickAction(
+    modifier: Modifier,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = modifier,
+        contentPadding = PaddingValues(vertical = 12.dp, horizontal = 6.dp),
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(icon, contentDescription = null)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+            )
+        }
+    }
+}
+
+/**
+ * Home card that tracks tummy time against the age-appropriate daily goal. Count-based: the
+ * parent taps "I did it" and sees "2 / 5 today · 3 to go". Tapping the guide link opens the
+ * informational Tummy Time screen.
+ */
+@Composable
+private fun TummyTimeCard(
+    doneToday: Int,
+    goal: Int,
+    onLog: () -> Unit,
+    onOpenGuide: () -> Unit,
+) {
+    val reached = goal > 0 && doneToday >= goal
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+        ),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.SelfImprovement,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.size(10.dp))
+                Text(
+                    "Tummy Time",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onOpenGuide) { Text(tr("Οδηγός")) }
+            }
+            Spacer(Modifier.height(2.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    tr("Σήμερα"),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                )
+                Text(
+                    "$doneToday / $goal",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            LinearProgressIndicator(
+                progress = { if (goal > 0) (doneToday.toFloat() / goal).coerceIn(0f, 1f) else 0f },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                tummyRemainingText(doneToday, goal),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (reached) MaterialTheme.colorScheme.secondary
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            )
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = onLog, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Filled.Add, contentDescription = null)
+                Spacer(Modifier.size(6.dp))
+                Text(tr("Έκανα Tummy Time"), maxLines = 1)
+            }
+        }
+    }
+}
+
+/** Tummy-time sessions logged since the start of today. */
+private fun tummyDoneToday(events: List<TummyTimeEvent>): Int {
+    val start = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    return events.count { it.timestamp >= start }
+}
+
+private fun tummyRemainingText(done: Int, goal: Int): String {
+    val remaining = (goal - done).coerceAtLeast(0)
+    return when (currentAppLang) {
+        AppLang.EN -> when (remaining) {
+            0 -> "Goal reached for today \uD83C\uDF89"
+            1 -> "1 more session to go"
+            else -> "$remaining more sessions to go"
+        }
+        AppLang.EL -> when (remaining) {
+            0 -> "Πέτυχες τον στόχο για σήμερα \uD83C\uDF89"
+            1 -> "Απομένει 1 ακόμη φορά"
+            else -> "Απομένουν $remaining ακόμη φορές"
+        }
     }
 }
 

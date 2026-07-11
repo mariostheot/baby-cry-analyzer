@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -19,6 +20,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SelectableDates
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -42,19 +45,28 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OnboardingScreen(
-    onFinish: (name: String, birthMillis: Long?) -> Unit,
+    onFinish: (name: String, birthMillis: Long?, colicConfirmed: Boolean) -> Unit,
     onSkip: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var name by remember { mutableStateOf("") }
     var birth by remember { mutableStateOf<Long?>(null) }
+    var colic by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
     val dateFmt = remember(currentAppLang) {
         SimpleDateFormat("dd/MM/yyyy", if (currentAppLang == AppLang.EN) Locale.ENGLISH else Locale("el"))
     }
 
+    // Onboarding is shown BEFORE the Scaffold, so nothing else paints a background here. The
+    // platform window is hardcoded white, so without this Surface the theme's near-white
+    // onSurface text (in dark mode) landed on white and was invisible. Painting the themed
+    // background guarantees the name field + labels always contrast correctly in both modes.
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
@@ -116,9 +128,31 @@ fun OnboardingScreen(
             OutlinedButton(onClick = { showPicker = true }) { Text(tr("Επιλογή")) }
         }
 
+        Spacer(Modifier.height(20.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    tr("Επιβεβαιωμένοι κολικοί/αέρια από γιατρό"),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    tr("Προαιρετικό — μόνο αν το έχει πει ο παιδίατρος. Δίνει μεγαλύτερο βάρος στο κοιλόπονο/αέρια. Αλλάζει όποτε θες από τις Ρυθμίσεις."),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Switch(checked = colic, onCheckedChange = { colic = it })
+        }
+
         Spacer(Modifier.height(32.dp))
         Button(
-            onClick = { onFinish(name, birth) },
+            onClick = { onFinish(name, birth, colic) },
             modifier = Modifier.fillMaxWidth(),
         ) { Text(tr("Ξεκίνα")) }
 
@@ -126,6 +160,7 @@ fun OnboardingScreen(
         TextButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
             Text(tr("Θα το κάνω αργότερα"))
         }
+    }
     }
 
     if (showPicker) {

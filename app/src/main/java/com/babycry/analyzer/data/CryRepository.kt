@@ -6,6 +6,7 @@ import com.babycry.analyzer.ml.CryAnalysis
 import com.babycry.analyzer.ml.CryAnalyzer
 import com.babycry.analyzer.model.BabyProfile
 import com.babycry.analyzer.model.CryReason
+import com.babycry.analyzer.model.DiaperType
 import com.babycry.analyzer.ui.i18n.AppLang
 import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.trS
@@ -47,6 +48,8 @@ class CryRepository private constructor(
     private val cryDao = db.cryEventDao()
     private val feedbackDao = db.feedbackDao()
     private val feedingDao = db.feedingDao()
+    private val diaperDao = db.diaperDao()
+    private val tummyDao = db.tummyDao()
     private val profilePrefs = context.getSharedPreferences("profile", Context.MODE_PRIVATE)
     private val clipStore = ClipStore(context)
 
@@ -61,6 +64,8 @@ class CryRepository private constructor(
     fun recentEvents(): Flow<List<CryEvent>> = cryDao.recent()
     fun feedbackCount(): Flow<Int> = feedbackDao.count()
     fun recentFeedings(): Flow<List<FeedingEvent>> = feedingDao.recent()
+    fun recentDiapers(): Flow<List<DiaperEvent>> = diaperDao.recent()
+    fun recentTummy(): Flow<List<TummyTimeEvent>> = tummyDao.recent()
 
     /** Load stored feedback into the personalization engine (call once at startup). */
     suspend fun refreshPersonalization() = withContext(Dispatchers.Default) {
@@ -96,9 +101,11 @@ class CryRepository private constructor(
                     gateScore = analysis.gateScore,
                 )
             )
-            // Only real cries are worth keeping/asking about.
+            // Only real cries are worth keeping/asking about. Confirmed cries are always kept
+            // on-device (the recording + embedding) so the parent can replay them and build a
+            // personal dataset - there is no user toggle for this.
             if (r.cryDetected) {
-                if (isSaveClipsEnabled() && waveform != null) {
+                if (waveform != null) {
                     clipStore.saveClip(id, waveform, analysis.embedding)
                 }
                 setPending(id)
@@ -185,6 +192,52 @@ class CryRepository private constructor(
 
     suspend fun logFeeding(note: String? = null) = withContext(Dispatchers.IO) {
         feedingDao.insert(FeedingEvent(timestamp = System.currentTimeMillis(), note = note))
+    }
+
+    suspend fun logDiaper(type: DiaperType) = withContext(Dispatchers.IO) {
+        diaperDao.insert(DiaperEvent(timestamp = System.currentTimeMillis(), type = type.name))
+    }
+
+    suspend fun logTummy() = withContext(Dispatchers.IO) {
+        tummyDao.insert(TummyTimeEvent(timestamp = System.currentTimeMillis()))
+    }
+
+    // ---- Tummy time: age-based daily goal + reminder --------------------------
+
+    /** Recommended tummy-time sessions per day for the active baby's age. */
+    fun tummyDailyGoal(): Int =
+        com.babycry.analyzer.model.TummyTime.dailyGoal(getProfile().ageDays())
+
+    /** How many tummy-time sessions have been logged since the start of today. */
+    suspend fun tummyDoneToday(): Int = withContext(Dispatchers.IO) {
+        tummyDao.countSince(startOfToday())
+    }
+
+    private fun startOfToday(): Long = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 0)
+        set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+    fun isTummyReminderEnabled(): Boolean = profilePrefs.getBoolean(TUMMY_REMINDER_ON, true)
+
+    fun setTummyReminderEnabled(enabled: Boolean) {
+        profilePrefs.edit().putBoolean(TUMMY_REMINDER_ON, enabled).apply()
+    }
+
+    /** Morning tummy-time reminder hour (0..23). Defaults to 11:00. */
+    fun tummyReminderHourAm(): Int = profilePrefs.getInt(TUMMY_REMINDER_HOUR_AM, 11).coerceIn(0, 23)
+
+    fun setTummyReminderHourAm(hour: Int) {
+        profilePrefs.edit().putInt(TUMMY_REMINDER_HOUR_AM, hour.coerceIn(0, 23)).apply()
+    }
+
+    /** Afternoon tummy-time reminder hour (0..23). Defaults to 18:00. */
+    fun tummyReminderHourPm(): Int = profilePrefs.getInt(TUMMY_REMINDER_HOUR_PM, 18).coerceIn(0, 23)
+
+    fun setTummyReminderHourPm(hour: Int) {
+        profilePrefs.edit().putInt(TUMMY_REMINDER_HOUR_PM, hour.coerceIn(0, 23)).apply()
     }
 
     suspend fun hoursSinceLastFeed(): Float? = withContext(Dispatchers.IO) {
@@ -293,9 +346,18 @@ class CryRepository private constructor(
         return list.firstOrNull { it.id == activeId } ?: list.first()
     }
 
-    suspend fun addProfile(name: String, birthMillis: Long?): String = withContext(Dispatchers.IO) {
+    suspend fun addProfile(
+        name: String,
+        birthMillis: Long?,
+        colicConfirmed: Boolean = false,
+    ): String = withContext(Dispatchers.IO) {
         val list = getProfiles().toMutableList()
-        val p = BabyProfile(name = name.trim(), birthMillis = birthMillis, id = newProfileId())
+        val p = BabyProfile(
+            name = name.trim(),
+            birthMillis = birthMillis,
+            id = newProfileId(),
+            colicConfirmed = colicConfirmed,
+        )
         list.add(p)
         persistProfiles(list, p.id)
         p.id
@@ -319,6 +381,17 @@ class CryRepository private constructor(
     /** Backwards-compatible alias used by existing callers: edits the active baby. */
     suspend fun setProfile(profile: BabyProfile) = updateActiveProfile(profile.name, profile.birthMillis)
 
+    /** Flags/unflags pediatrician-confirmed colic for the active baby (drives the context prior). */
+    suspend fun setColicConfirmed(enabled: Boolean) = withContext(Dispatchers.IO) {
+        val list = getProfiles().toMutableList()
+        val activeId = getProfile().id
+        val idx = list.indexOfFirst { activeId.isNotBlank() && it.id == activeId }
+        if (idx >= 0) {
+            list[idx] = list[idx].copy(colicConfirmed = enabled)
+            persistProfiles(list, list[idx].id)
+        }
+    }
+
     suspend fun setActiveProfile(id: String) = withContext(Dispatchers.IO) {
         profilePrefs.edit().putString(ACTIVE_PROFILE, id).apply()
     }
@@ -340,6 +413,7 @@ class CryRepository private constructor(
                 name = o.optString("name", ""),
                 birthMillis = if (o.has("birthMillis")) o.optLong("birthMillis") else null,
                 id = o.optString("id", "").ifBlank { newProfileId() },
+                colicConfirmed = o.optBoolean("colicConfirmed", false),
             )
         }
     }
@@ -351,6 +425,7 @@ class CryRepository private constructor(
                 put("id", p.id)
                 put("name", p.name)
                 p.birthMillis?.let { put("birthMillis", it) }
+                put("colicConfirmed", p.colicConfirmed)
             })
         }
         profilePrefs.edit().apply {
@@ -380,6 +455,8 @@ class CryRepository private constructor(
     suspend fun clearHistory() = withContext(Dispatchers.IO) {
         cryDao.clear()
         feedingDao.clear()
+        diaperDao.clear()
+        tummyDao.clear()
         clipStore.clearAll()
         clearPending()
     }
@@ -392,12 +469,6 @@ class CryRepository private constructor(
     }
 
     // ---- Personal dataset (exportable) ---------------------------------------
-
-    fun isSaveClipsEnabled(): Boolean = profilePrefs.getBoolean(SAVE_CLIPS, true)
-
-    fun setSaveClips(enabled: Boolean) {
-        profilePrefs.edit().putBoolean(SAVE_CLIPS, enabled).apply()
-    }
 
     /** (#clips, totalBytes) currently stored on device. */
     suspend fun datasetInfo(): Pair<Int, Long> = withContext(Dispatchers.IO) {
@@ -433,6 +504,8 @@ class CryRepository private constructor(
         )
         val events = cryDao.allEvents()
         val feedings = feedingDao.allList()
+        val diapers = diaperDao.allList()
+        val tummy = tummyDao.allList()
         val stats = stats()
         val profile = getProfile()
         val cries = events.filter { it.cryDetected }
@@ -560,6 +633,79 @@ class CryRepository private constructor(
             sb.append("</div>")
         }
 
+        // ---- Diapers: counts, poop frequency and the two-week trend. ----
+        if (diapers.isNotEmpty()) {
+            val dayMs = 86_400_000L
+            val cal = java.util.Calendar.getInstance()
+            cal.timeInMillis = System.currentTimeMillis()
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            cal.set(java.util.Calendar.MINUTE, 0)
+            cal.set(java.util.Calendar.SECOND, 0)
+            cal.set(java.util.Calendar.MILLISECOND, 0)
+            val todayStart = cal.timeInMillis
+            val firstTs = diapers.minOf { it.timestamp }
+            val daysTracked = (((System.currentTimeMillis() - firstTs) / dayMs) + 1).toInt().coerceAtLeast(1)
+            val poops = diapers.count { DiaperType.fromNameOrNull(it.type)?.hasStool == true }
+            val avgPerDay = diapers.size.toFloat() / daysTracked
+            val poopsPerDay = poops.toFloat() / daysTracked
+
+            sb.append("<h2>${trS("Πάνες")}</h2>")
+            sb.append("<div class=\"row\"><span>${trS("Σύνολο αλλαγών")}</span><span>${diapers.size}</span></div>")
+            sb.append("<div class=\"row\"><span>${trS("Μέσος όρος αλλαγών/ημέρα")}</span><span>${"%.1f".format(avgPerDay)}</span></div>")
+            sb.append("<div class=\"row\"><span>${trS("Κακά (σύνολο)")}</span><span>$poops</span></div>")
+            sb.append("<div class=\"row\"><span>${trS("Κακά ανά ημέρα (μ.ο.)")}</span><span>${"%.1f".format(poopsPerDay)}</span></div>")
+
+            val dayFmt = SimpleDateFormat("d/M", if (lang == AppLang.EN) Locale.ENGLISH else Locale("el"))
+            val perDay = (13 downTo 0).map { back ->
+                val start = todayStart - back * dayMs
+                dayFmt.format(Date(start)) to diapers.count { it.timestamp in start until (start + dayMs) }
+            }
+            val maxDay = (perDay.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
+            sb.append("<h2>${trS("Πάνες ανά ημέρα (τελευταίες 14)")}</h2>")
+            sb.append("<div class=\"days\">")
+            for ((label, count) in perDay) {
+                val hpx = (6 + 74.0 * count / maxDay).toInt()
+                sb.append("<div class=\"col\"><div class=\"cnt\">$count</div><div class=\"b\" style=\"height:${hpx}px\"></div><div class=\"lbl\">${esc(label)}</div></div>")
+            }
+            sb.append("</div>")
+        }
+
+        // ---- Tummy time: totals, today vs age-goal and the two-week trend. ----
+        if (tummy.isNotEmpty()) {
+            val dayMs = 86_400_000L
+            val cal = java.util.Calendar.getInstance()
+            cal.timeInMillis = System.currentTimeMillis()
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            cal.set(java.util.Calendar.MINUTE, 0)
+            cal.set(java.util.Calendar.SECOND, 0)
+            cal.set(java.util.Calendar.MILLISECOND, 0)
+            val todayStart = cal.timeInMillis
+            val firstTs = tummy.minOf { it.timestamp }
+            val daysTracked = (((System.currentTimeMillis() - firstTs) / dayMs) + 1).toInt().coerceAtLeast(1)
+            val avgPerDay = tummy.size.toFloat() / daysTracked
+            val doneToday = tummy.count { it.timestamp >= todayStart }
+            val goal = tummyDailyGoal()
+
+            sb.append("<h2>${trS("Tummy time")}</h2>")
+            sb.append("<div class=\"row\"><span>${trS("Σύνολο συνεδριών")}</span><span>${tummy.size}</span></div>")
+            sb.append("<div class=\"row\"><span>${trS("Μέσος όρος/ημέρα")}</span><span>${"%.1f".format(avgPerDay)}</span></div>")
+            sb.append("<div class=\"row\"><span>${trS("Σήμερα")}</span><span>$doneToday / $goal</span></div>")
+
+            val dayFmt = SimpleDateFormat("d/M", if (lang == AppLang.EN) Locale.ENGLISH else Locale("el"))
+            val perDay = (13 downTo 0).map { back ->
+                val start = todayStart - back * dayMs
+                dayFmt.format(Date(start)) to tummy.count { it.timestamp in start until (start + dayMs) }
+            }
+            val maxDay = (perDay.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
+            sb.append("<h2>${trS("Tummy time ανά ημέρα (τελευταίες 14)")}</h2>")
+            sb.append("<div class=\"days\">")
+            for ((label, count) in perDay) {
+                val hpx = (6 + 74.0 * count / maxDay).toInt()
+                sb.append("<div class=\"col\"><div class=\"cnt\">$count</div><div class=\"b\" style=\"height:${hpx}px\"></div><div class=\"lbl\">${esc(label)}</div></div>")
+            }
+            sb.append("</div>")
+        }
+
         // Reason breakdown
         val distTotal = stats.predictedDistribution.sum().coerceAtLeast(1)
         sb.append("<h2>${trS("Κατανομή αιτιών")}</h2>")
@@ -605,6 +751,7 @@ class CryRepository private constructor(
         root.put("profile", JSONObject().apply {
             put("name", profile.name)
             profile.birthMillis?.let { put("birthMillis", it) }
+            put("colicConfirmed", profile.colicConfirmed)
         })
         // All babies (multi-profile). "profile" above stays for backwards compatibility.
         val profilesArr = JSONArray()
@@ -613,6 +760,7 @@ class CryRepository private constructor(
                 put("id", p.id)
                 put("name", p.name)
                 p.birthMillis?.let { put("birthMillis", it) }
+                put("colicConfirmed", p.colicConfirmed)
             })
         }
         root.put("profiles", profilesArr)
@@ -652,6 +800,23 @@ class CryRepository private constructor(
         }
         root.put("feedings", feedArr)
 
+        val diaperArr = JSONArray()
+        for (de in diaperDao.allList()) {
+            diaperArr.put(JSONObject().apply {
+                put("timestamp", de.timestamp)
+                put("type", de.type)
+            })
+        }
+        root.put("diapers", diaperArr)
+
+        val tummyArr = JSONArray()
+        for (te in tummyDao.allList()) {
+            tummyArr.put(JSONObject().apply {
+                put("timestamp", te.timestamp)
+            })
+        }
+        root.put("tummy", tummyArr)
+
         root.toString()
     }
 
@@ -667,6 +832,7 @@ class CryRepository private constructor(
                     name = o.optString("name", ""),
                     birthMillis = if (o.has("birthMillis")) o.optLong("birthMillis") else null,
                     id = o.optString("id", "").ifBlank { newProfileId() },
+                    colicConfirmed = o.optBoolean("colicConfirmed", false),
                 )
             }
             val active = root.optString("activeProfile", "")
@@ -677,6 +843,7 @@ class CryRepository private constructor(
                     name = p.optString("name", ""),
                     birthMillis = if (p.has("birthMillis")) p.optLong("birthMillis") else null,
                     id = newProfileId(),
+                    colicConfirmed = p.optBoolean("colicConfirmed", false),
                 )
                 persistProfiles(listOf(one), one.id)
             }
@@ -685,6 +852,8 @@ class CryRepository private constructor(
         cryDao.clear()
         feedbackDao.clear()
         feedingDao.clear()
+        diaperDao.clear()
+        tummyDao.clear()
         // Old clips are keyed by the previous event ids, which no longer match.
         clipStore.clearAll()
         clearPending()
@@ -731,6 +900,23 @@ class CryRepository private constructor(
                 )
             }
         }
+        root.optJSONArray("diapers")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                diaperDao.insert(
+                    DiaperEvent(
+                        timestamp = o.getLong("timestamp"),
+                        type = o.optString("type", DiaperType.WET.name),
+                    )
+                )
+            }
+        }
+        root.optJSONArray("tummy")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                tummyDao.insert(TummyTimeEvent(timestamp = o.getLong("timestamp")))
+            }
+        }
 
         val all = feedbackDao.all()
         analyzer.personalization.updatePrototypes(all)
@@ -760,6 +946,7 @@ class CryRepository private constructor(
             hourOfDay = hour,
             ageMonths = profile.ageMonths(),
             ageDays = profile.ageDays(),
+            colicConfirmed = profile.colicConfirmed,
         )
     }
 
@@ -771,8 +958,10 @@ class CryRepository private constructor(
         private const val ONBOARDING_DONE = "onboarding_done"
         private const val PENDING_ID = "pending_confirm_id"
         private const val PENDING_AT = "pending_confirm_at"
-        private const val SAVE_CLIPS = "save_clips"
         private const val APP_LANG = "app_lang"
+        private const val TUMMY_REMINDER_ON = "tummy_reminder_on"
+        private const val TUMMY_REMINDER_HOUR_AM = "tummy_reminder_hour_am"
+        private const val TUMMY_REMINDER_HOUR_PM = "tummy_reminder_hour_pm"
 
         @Volatile
         private var instance: CryRepository? = null

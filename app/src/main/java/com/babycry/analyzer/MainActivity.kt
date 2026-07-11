@@ -10,7 +10,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.HealthAndSafety
@@ -21,6 +24,7 @@ import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.SelfImprovement
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -60,9 +64,11 @@ import com.babycry.analyzer.ui.SafetyScreen
 import com.babycry.analyzer.ui.SettingsScreen
 import com.babycry.analyzer.ui.SootheScreen
 import com.babycry.analyzer.ui.StatsScreen
+import com.babycry.analyzer.ui.TummyTimeScreen
 import com.babycry.analyzer.ui.theme.BabyCryTheme
 import com.babycry.analyzer.notify.ConfirmReminder
 import com.babycry.analyzer.notify.FeedReminder
+import com.babycry.analyzer.notify.TummyReminder
 import com.babycry.analyzer.ui.i18n.LocalAppLang
 import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.AppLang
@@ -97,6 +103,7 @@ private enum class Overlay(val title: String) {
     REPORT("Αναφορά"),
     SOOTHE("Ηρέμησε το μωρό"),
     SAFETY("Πότε να ανησυχήσεις"),
+    TUMMY("Tummy Time"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -112,7 +119,7 @@ private fun AppRoot() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppRootContent(viewModel: CryViewModel) {
-    var tab by remember { mutableStateOf(Tab.HOME) }
+    val pagerState = rememberPagerState(pageCount = { Tab.entries.size })
     var overlay by remember { mutableStateOf<Overlay?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -192,6 +199,7 @@ private fun AppRootContent(viewModel: CryViewModel) {
         if (!onboardingDone) return@LaunchedEffect
         ConfirmReminder.ensureChannel(context)
         FeedReminder.ensureChannel(context)
+        TummyReminder.ensureChannel(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -200,6 +208,7 @@ private fun AppRootContent(viewModel: CryViewModel) {
         }
         viewModel.refreshPending()
         viewModel.scheduleFeedReminder()
+        viewModel.scheduleTummyReminder()
     }
 
     val onListen: () -> Unit = {
@@ -221,7 +230,7 @@ private fun AppRootContent(viewModel: CryViewModel) {
 
     if (!onboardingDone) {
         OnboardingScreen(
-            onFinish = { name, birth -> viewModel.completeOnboarding(name, birth) },
+            onFinish = { name, birth, colic -> viewModel.completeOnboarding(name, birth, colic) },
             onSkip = { viewModel.skipOnboarding() },
         )
         return
@@ -251,6 +260,11 @@ private fun AppRootContent(viewModel: CryViewModel) {
                                 onClick = { menuOpen = false; overlay = Overlay.SOOTHE },
                             )
                             DropdownMenuItem(
+                                text = { Text("Tummy Time") },
+                                leadingIcon = { Icon(Icons.Filled.SelfImprovement, contentDescription = null) },
+                                onClick = { menuOpen = false; overlay = Overlay.TUMMY },
+                            )
+                            DropdownMenuItem(
                                 text = { Text(tr("Πότε να ανησυχήσεις")) },
                                 leadingIcon = { Icon(Icons.Filled.HealthAndSafety, contentDescription = null) },
                                 onClick = { menuOpen = false; overlay = Overlay.SAFETY },
@@ -274,8 +288,11 @@ private fun AppRootContent(viewModel: CryViewModel) {
             NavigationBar {
                 Tab.entries.forEach { entry ->
                     NavigationBarItem(
-                        selected = overlay == null && tab == entry,
-                        onClick = { overlay = null; tab = entry },
+                        selected = overlay == null && pagerState.currentPage == entry.ordinal,
+                        onClick = {
+                            overlay = null
+                            scope.launch { pagerState.animateScrollToPage(entry.ordinal) }
+                        },
                         icon = { Icon(entry.icon, contentDescription = tr(entry.label)) },
                         label = { Text(tr(entry.label)) },
                     )
@@ -284,30 +301,43 @@ private fun AppRootContent(viewModel: CryViewModel) {
         },
     ) { innerPadding ->
         Box(Modifier.padding(innerPadding)) {
-            when {
-                overlay == Overlay.SETTINGS -> SettingsScreen(
-                    viewModel = viewModel,
-                    onExportReport = { overlay = Overlay.REPORT },
-                    onBackup = { backupLauncher.launch("baby-cry-backup.json") },
-                    onRestore = { restoreLauncher.launch(arrayOf("application/json")) },
-                )
-                overlay == Overlay.ABOUT -> AboutScreen()
-                overlay == Overlay.REPORT -> ReportScreen(viewModel)
-                overlay == Overlay.SOOTHE -> SootheScreen(viewModel)
-                overlay == Overlay.SAFETY -> SafetyScreen()
-                tab == Tab.HOME -> HomeScreen(
-                    viewModel = viewModel,
-                    onListen = onListen,
-                    onCancel = { viewModel.cancelListening() },
-                    onSoothe = { overlay = Overlay.SOOTHE },
-                    onSafety = { overlay = Overlay.SAFETY },
-                )
-                tab == Tab.HISTORY -> HistoryScreen(viewModel)
-                tab == Tab.LIBRARY -> LibraryScreen(
-                    viewModel = viewModel,
-                    onExportDataset = { datasetLauncher.launch("baby-cry-dataset.zip") },
-                )
-                tab == Tab.STATS -> StatsScreen(viewModel)
+            val ov = overlay
+            if (ov != null) {
+                // Overlays are modal full screens with a back arrow — they don't swipe.
+                when (ov) {
+                    Overlay.SETTINGS -> SettingsScreen(
+                        viewModel = viewModel,
+                        onExportReport = { overlay = Overlay.REPORT },
+                        onBackup = { backupLauncher.launch("baby-cry-backup.json") },
+                        onRestore = { restoreLauncher.launch(arrayOf("application/json")) },
+                        onExportDataset = { datasetLauncher.launch("baby-cry-dataset.zip") },
+                    )
+                    Overlay.ABOUT -> AboutScreen()
+                    Overlay.REPORT -> ReportScreen(viewModel)
+                    Overlay.SOOTHE -> SootheScreen(viewModel)
+                    Overlay.SAFETY -> SafetyScreen()
+                    Overlay.TUMMY -> TummyTimeScreen()
+                }
+            } else {
+                // The four main tabs: swipe left/right or tap the bottom bar to switch.
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                ) { page ->
+                    when (Tab.entries[page]) {
+                        Tab.HOME -> HomeScreen(
+                            viewModel = viewModel,
+                            onListen = onListen,
+                            onCancel = { viewModel.cancelListening() },
+                            onSoothe = { overlay = Overlay.SOOTHE },
+                            onSafety = { overlay = Overlay.SAFETY },
+                            onTummyGuide = { overlay = Overlay.TUMMY },
+                        )
+                        Tab.HISTORY -> HistoryScreen(viewModel)
+                        Tab.LIBRARY -> LibraryScreen(viewModel = viewModel)
+                        Tab.STATS -> StatsScreen(viewModel)
+                    }
+                }
             }
         }
     }
