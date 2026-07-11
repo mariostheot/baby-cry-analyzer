@@ -65,6 +65,7 @@ import com.babycry.analyzer.ui.i18n.LocalAppLang
 import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.AppLang
 import com.babycry.analyzer.ui.i18n.tr
+import com.babycry.analyzer.ui.i18n.trS
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -124,7 +125,7 @@ private fun AppRootContent(viewModel: CryViewModel) {
             viewModel.onListenTapped()
         } else {
             scope.launch {
-                snackbarHostState.showSnackbar(tr("Χρειάζεται άδεια μικροφώνου για την ηχογράφηση."))
+                snackbarHostState.showSnackbar(trS("Χρειάζεται άδεια μικροφώνου για την ηχογράφηση."))
             }
         }
     }
@@ -140,7 +141,7 @@ private fun AppRootContent(viewModel: CryViewModel) {
                         it.write(json.toByteArray())
                     }
                 }
-                snackbarHostState.showSnackbar(tr("Το backup αποθηκεύτηκε."))
+                snackbarHostState.showSnackbar(trS("Το backup αποθηκεύτηκε."))
             }
         }
     }
@@ -172,7 +173,7 @@ private fun AppRootContent(viewModel: CryViewModel) {
                 }
                 snackbarHostState.showSnackbar(
                     if (count > 0) datasetExportedMessage(count)
-                    else tr("Δεν υπάρχουν ακόμη επιβεβαιωμένες ηχογραφήσεις για εξαγωγή."),
+                    else trS("Δεν υπάρχουν ακόμη επιβεβαιωμένες ηχογραφήσεις για εξαγωγή."),
                 )
             }
         }
@@ -211,9 +212,9 @@ private fun AppRootContent(viewModel: CryViewModel) {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_TEXT, text)
             }
-            context.startActivity(Intent.createChooser(intent, tr("Κοινοποίηση αποτελέσματος")))
+            context.startActivity(Intent.createChooser(intent, trS("Κοινοποίηση αποτελέσματος")))
         } else {
-            scope.launch { snackbarHostState.showSnackbar(tr("Δεν υπάρχει αποτέλεσμα για κοινοποίηση.")) }
+            scope.launch { snackbarHostState.showSnackbar(trS("Δεν υπάρχει αποτέλεσμα για κοινοποίηση.")) }
         }
     }
 
