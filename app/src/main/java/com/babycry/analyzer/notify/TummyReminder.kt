@@ -33,7 +33,6 @@ import kotlinx.coroutines.launch
 object TummyReminder {
 
     const val CHANNEL_ID = "tummy_reminders"
-    const val NOTIFICATION_ID = 4203
     const val EXTRA_SLOT = "tummy_slot"
     const val EXTRA_PROFILE_ID = "tummy_profile_id"
     const val SLOT_AM = "am"
@@ -54,10 +53,11 @@ object TummyReminder {
             return
         }
         cancel(context)
-        val profileId = repo.currentProfileId()
-        if (profileId.isBlank()) return
-        scheduleSlot(context, SLOT_AM, repo.tummyReminderHourAm(), profileId)
-        scheduleSlot(context, SLOT_PM, repo.tummyReminderHourPm(), profileId)
+        val profiles = repo.getProfiles()
+        for (profile in profiles) {
+            scheduleSlot(context, SLOT_AM, repo.tummyReminderHourAm(), profile.id)
+            scheduleSlot(context, SLOT_PM, repo.tummyReminderHourPm(), profile.id)
+        }
     }
 
     private fun scheduleSlot(context: Context, slot: String, hour: Int, profileId: String) {
@@ -82,9 +82,18 @@ object TummyReminder {
         val repo = CryRepository.get(context)
         val profileIds = (repo.getProfiles().map { it.id } + repo.currentProfileId()).distinct()
         for (profileId in profileIds) {
-            am.cancel(alarmIntent(context, SLOT_AM, profileId))
-            am.cancel(alarmIntent(context, SLOT_PM, profileId))
+            cancel(context, profileId, am)
         }
+    }
+
+    fun cancel(context: Context, profileId: String) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        cancel(context, profileId, am)
+    }
+
+    private fun cancel(context: Context, profileId: String, am: AlarmManager) {
+        am.cancel(alarmIntent(context, SLOT_AM, profileId))
+        am.cancel(alarmIntent(context, SLOT_PM, profileId))
     }
 
     private fun alarmIntent(context: Context, slot: String, profileId: String): PendingIntent {
@@ -152,7 +161,7 @@ object TummyReminder {
         }
         val pi = PendingIntent.getActivity(
             context,
-            2,
+            REQ_AM + profileId.hashCode(),
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
@@ -168,7 +177,7 @@ object TummyReminder {
             .build()
 
         runCatching {
-            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+            NotificationManagerCompat.from(context).notify(4203 + profileId.hashCode(), notification)
         }
     }
 

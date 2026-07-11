@@ -60,6 +60,7 @@ import com.babycry.analyzer.ui.HistoryScreen
 import com.babycry.analyzer.ui.HomeScreen
 import com.babycry.analyzer.ui.LibraryScreen
 import com.babycry.analyzer.ui.OnboardingScreen
+import com.babycry.analyzer.ui.Phase
 import com.babycry.analyzer.ui.ReportScreen
 import com.babycry.analyzer.ui.SafetyScreen
 import com.babycry.analyzer.ui.SettingsScreen
@@ -82,20 +83,24 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     private var openConfirmRequest by mutableStateOf(false)
     private var openConfirmProfileId by mutableStateOf<String?>(null)
+    private var openConfirmEventId by mutableStateOf(0L)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         openConfirmRequest = intent?.getBooleanExtra(ConfirmReminder.EXTRA_OPEN_CONFIRM, false) == true
         openConfirmProfileId = intent?.getStringExtra(ConfirmReminder.EXTRA_PROFILE_ID)
+        openConfirmEventId = intent?.getLongExtra(ConfirmReminder.EXTRA_EVENT_ID, 0L) ?: 0L
         setContent {
             BabyCryTheme {
                 AppRoot(
                     openConfirmRequest = openConfirmRequest,
                     openConfirmProfileId = openConfirmProfileId,
+                    openConfirmEventId = openConfirmEventId,
                     onOpenConfirmHandled = {
                         openConfirmRequest = false
                         openConfirmProfileId = null
+                        openConfirmEventId = 0L
                     },
                 )
             }
@@ -108,6 +113,7 @@ class MainActivity : ComponentActivity() {
         if (intent.getBooleanExtra(ConfirmReminder.EXTRA_OPEN_CONFIRM, false)) {
             openConfirmRequest = true
             openConfirmProfileId = intent.getStringExtra(ConfirmReminder.EXTRA_PROFILE_ID)
+            openConfirmEventId = intent.getLongExtra(ConfirmReminder.EXTRA_EVENT_ID, 0L)
         }
     }
 }
@@ -133,6 +139,7 @@ private enum class Overlay(val title: String) {
 private fun AppRoot(
     openConfirmRequest: Boolean,
     openConfirmProfileId: String?,
+    openConfirmEventId: Long,
     onOpenConfirmHandled: () -> Unit,
 ) {
     val viewModel: CryViewModel = viewModel()
@@ -142,6 +149,7 @@ private fun AppRoot(
             viewModel = viewModel,
             openConfirmRequest = openConfirmRequest,
             openConfirmProfileId = openConfirmProfileId,
+            openConfirmEventId = openConfirmEventId,
             onOpenConfirmHandled = onOpenConfirmHandled,
         )
     }
@@ -153,6 +161,7 @@ private fun AppRootContent(
     viewModel: CryViewModel,
     openConfirmRequest: Boolean,
     openConfirmProfileId: String?,
+    openConfirmEventId: Long,
     onOpenConfirmHandled: () -> Unit,
 ) {
     val pagerState = rememberPagerState(pageCount = { Tab.entries.size })
@@ -164,6 +173,7 @@ private fun AppRootContent(
     val snackbarHostState = remember { SnackbarHostState() }
     val home by viewModel.home.collectAsState()
     val onboardingDone by viewModel.onboardingComplete.collectAsState()
+    val interactionLocked = home.phase == Phase.RECORDING || home.phase == Phase.ANALYZING
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -249,9 +259,9 @@ private fun AppRootContent(
         viewModel.scheduleTummyReminder()
     }
 
-    LaunchedEffect(openConfirmRequest, openConfirmProfileId, onboardingDone) {
+    LaunchedEffect(openConfirmRequest, openConfirmProfileId, openConfirmEventId, onboardingDone) {
         if (openConfirmRequest && onboardingDone) {
-            viewModel.openPendingForBaby(openConfirmProfileId)
+            viewModel.openPendingForBaby(openConfirmProfileId, openConfirmEventId)
             overlay = null
             pagerState.animateScrollToPage(Tab.HOME.ordinal)
             onOpenConfirmHandled()
@@ -302,7 +312,7 @@ private fun AppRootContent(
                     }
                 },
                 actions = {
-                    if (overlay == null) {
+                    if (overlay == null && !interactionLocked) {
                         IconButton(onClick = { menuOpen = true }) {
                             Icon(Icons.Filled.MoreVert, contentDescription = tr("Μενού"))
                         }
@@ -343,8 +353,10 @@ private fun AppRootContent(
                     NavigationBarItem(
                         selected = overlay == null && pagerState.currentPage == entry.ordinal,
                         onClick = {
-                            overlay = null
-                            scope.launch { pagerState.animateScrollToPage(entry.ordinal) }
+                            if (!interactionLocked) {
+                                overlay = null
+                                scope.launch { pagerState.animateScrollToPage(entry.ordinal) }
+                            }
                         },
                         icon = { Icon(entry.icon, contentDescription = tr(entry.label)) },
                         label = { Text(tr(entry.label)) },
@@ -379,6 +391,7 @@ private fun AppRootContent(
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize(),
+                    userScrollEnabled = !interactionLocked,
                 ) { page ->
                     when (Tab.entries[page]) {
                         Tab.HOME -> HomeScreen(

@@ -142,13 +142,17 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             refreshProfiles()
             repo.refreshPersonalization()
+            refreshPendingNow()
         }
-        refreshPending()
     }
 
     /** Re-check whether there's a past cry waiting for the parent to confirm its reason. */
     fun refreshPending() {
-        viewModelScope.launch { _pending.value = repo.pendingConfirmation() }
+        viewModelScope.launch { refreshPendingNow() }
+    }
+
+    private suspend fun refreshPendingNow() {
+        _pending.value = repo.pendingConfirmation()
     }
 
     /**
@@ -242,6 +246,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
                         getApplication<Application>(),
                         REMINDER_DELAY_MIN,
                         repo.currentProfileId(),
+                        eventId,
                     )
                 }
             } catch (t: Throwable) {
@@ -278,20 +283,22 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         val eventId = state.eventId ?: return
         val embedding = state.analysis?.embedding
         viewModelScope.launch {
+            val profileId = repo.profileIdForEvent(eventId) ?: repo.currentProfileId()
             repo.confirm(eventId, reason, embedding)
             if (_pending.value?.id == eventId) _pending.value = null
-            ConfirmReminder.cancel(getApplication<Application>())
+            ConfirmReminder.cancel(getApplication<Application>(), profileId, eventId)
+            refreshPendingNow()
             _home.update { it.copy(feedbackGiven = true, message = trS("Ευχαριστώ! Θα μάθω από αυτό.")) }
         }
     }
 
     /** Confirm/correct the reason for the pending (previous) cry, from the home banner. */
     fun confirmPending(reason: CryReason) {
-        val id = _pending.value?.id ?: return
+        val pending = _pending.value ?: return
         viewModelScope.launch {
-            repo.setReason(id, reason)
-            _pending.value = null
-            ConfirmReminder.cancel(getApplication<Application>())
+            repo.setReason(pending.id, reason)
+            ConfirmReminder.cancel(getApplication<Application>(), pending.profileId, pending.id)
+            refreshPendingNow()
             _home.update {
                 it.copy(message = recordedMessage(reason))
             }
@@ -300,16 +307,20 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     /** "Not sure yet" - stop asking for now (still editable later from History). */
     fun dismissPending() {
-        repo.dismissPending()
-        _pending.value = null
-        ConfirmReminder.cancel(getApplication<Application>())
+        val pending = _pending.value ?: return
+        repo.dismissPending(pending.profileId)
+        ConfirmReminder.cancel(getApplication<Application>(), pending.profileId, pending.id)
+        viewModelScope.launch { refreshPendingNow() }
     }
 
     /** Set/correct the reason of any past cry (from History). */
     fun setReasonForEvent(eventId: Long, reason: CryReason) {
         viewModelScope.launch {
             repo.setReason(eventId, reason)
-            if (_pending.value?.id == eventId) _pending.value = null
+            repo.profileIdForEvent(eventId)?.let { profileId ->
+                ConfirmReminder.cancel(getApplication<Application>(), profileId, eventId)
+            }
+            refreshPendingNow()
             _home.update { it.copy(message = trS("Ενημερώθηκε η αιτία.")) }
         }
     }
@@ -379,11 +390,22 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     fun scheduleFeedReminder() {
         viewModelScope.launch {
             val app = getApplication<Application>()
-            val plan = repo.feedReminderPlan()
-            if (plan == null) {
-                FeedReminder.cancel(app)
-            } else {
-                FeedReminder.schedule(app, plan.first, plan.second)
+            for (profile in repo.getProfiles()) {
+                val plan = repo.feedReminderPlan(profile.id)
+                if (plan == null) {
+                    FeedReminder.cancel(app, profile.id)
+                } else {
+                    FeedReminder.schedule(app, plan.first, plan.second, profile.id)
+                }
+            }
+        }
+    }
+
+    private fun schedulePendingConfirmations() {
+        val app = getApplication<Application>()
+        for (profile in repo.getProfiles()) {
+            for (eventId in repo.pendingEventIds(profile.id)) {
+                ConfirmReminder.schedule(app, REMINDER_DELAY_MIN, profile.id, eventId)
             }
         }
     }
@@ -491,16 +513,19 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectBaby(id: String) {
         viewModelScope.launch {
+            _pending.value = null
             repo.setActiveProfile(id)
             refreshProfiles()
             refreshActiveProfileState()
         }
     }
 
-    fun openPendingForBaby(id: String?) {
+    fun openPendingForBaby(id: String?, eventId: Long?) {
         viewModelScope.launch {
+            _pending.value = null
             if (!id.isNullOrBlank() && repo.hasProfile(id)) {
                 repo.setActiveProfile(id)
+                eventId?.takeIf { it > 0L }?.let { repo.focusPendingEvent(id, it) }
             }
             refreshProfiles()
             refreshActiveProfileState()
@@ -509,6 +534,10 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteBaby(id: String) {
         viewModelScope.launch {
+            _pending.value = null
+            ConfirmReminder.cancelAllForProfile(getApplication<Application>(), id, repo.pendingEventIds(id))
+            FeedReminder.cancel(getApplication<Application>(), id)
+            TummyReminder.cancel(getApplication<Application>(), id)
             repo.deleteProfile(id)
             refreshProfiles()
             refreshActiveProfileState()
@@ -543,25 +572,39 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun refreshActiveProfileState() {
         repo.refreshPersonalization()
-        refreshPending()
+        refreshPendingNow()
         scheduleFeedReminder()
         scheduleTummyReminder()
     }
 
     fun skipOnboarding() {
-        repo.setOnboardingComplete()
-        _onboardingComplete.value = true
+        viewModelScope.launch {
+            repo.addProfile("", null)
+            repo.setOnboardingComplete()
+            refreshProfiles()
+            refreshActiveProfileState()
+            _onboardingComplete.value = true
+        }
     }
 
     fun clearHistory() {
         viewModelScope.launch {
+            val profileId = repo.currentProfileId()
+            val pendingIds = repo.pendingEventIds(profileId)
             repo.clearHistory()
+            ConfirmReminder.cancelAllForProfile(getApplication<Application>(), profileId, pendingIds)
+            _pending.value = null
             _home.update { it.copy(message = trS("Το ιστορικό & τα στατιστικά μηδενίστηκαν.")) }
         }
     }
 
     fun deleteEvent(id: Long) {
-        viewModelScope.launch { repo.deleteEvent(id) }
+        viewModelScope.launch {
+            val profileId = repo.profileIdForEvent(id)
+            repo.deleteEvent(id)
+            if (profileId != null) ConfirmReminder.cancel(getApplication<Application>(), profileId, id)
+            refreshPendingNow()
+        }
     }
 
     fun refreshData() {
@@ -585,7 +628,13 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val n = repo.importBackupJson(json)
                 refreshProfiles()
-                refreshPending()
+                _language.value = repo.getLanguage()
+                _personalizationEnabled.value = repo.isPersonalizationEnabled()
+                _tummyReminderEnabled.value = repo.isTummyReminderEnabled()
+                _tummyReminderHourAm.value = repo.tummyReminderHourAm()
+                _tummyReminderHourPm.value = repo.tummyReminderHourPm()
+                refreshPendingNow()
+                schedulePendingConfirmations()
                 scheduleFeedReminder()
                 scheduleTummyReminder()
                 _home.update { it.copy(message = restoreCompleteMessage(n)) }

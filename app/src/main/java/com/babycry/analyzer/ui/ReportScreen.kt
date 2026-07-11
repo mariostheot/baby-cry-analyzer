@@ -4,6 +4,7 @@ import android.content.Context
 import android.print.PrintAttributes
 import android.print.PrintManager
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,12 +47,14 @@ fun ReportScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     var html by remember { mutableStateOf<String?>(null) }
     var webRef by remember { mutableStateOf<WebView?>(null) }
     var loadedHtml by remember { mutableStateOf<String?>(null) }
+    var pageReady by remember { mutableStateOf(false) }
     val language by viewModel.language.collectAsState()
     val profile by viewModel.profile.collectAsState()
 
     LaunchedEffect(language, profile.id, profile.name, profile.birthMillis, profile.gender) {
         html = null
         loadedHtml = null
+        pageReady = false
         html = viewModel.exportReportHtml()
     }
 
@@ -70,7 +73,7 @@ fun ReportScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
             ) {
                 Button(
                     onClick = { webRef?.let { printReport(context, it) } },
-                    enabled = webRef != null,
+                    enabled = webRef != null && pageReady && loadedHtml == h,
                 ) {
                     Icon(Icons.Filled.PictureAsPdf, contentDescription = null)
                     Spacer(Modifier.size(8.dp))
@@ -81,11 +84,17 @@ fun ReportScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                 factory = { ctx ->
                     WebView(ctx).apply {
                         settings.javaScriptEnabled = false
+                        webViewClient = object : WebViewClient() {
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                pageReady = true
+                            }
+                        }
                         webRef = this
                     }
                 },
                 update = {
                     if (loadedHtml != h) {
+                        pageReady = false
                         it.loadDataWithBaseURL(null, h, "text/html", "UTF-8", null)
                         loadedHtml = h
                     }

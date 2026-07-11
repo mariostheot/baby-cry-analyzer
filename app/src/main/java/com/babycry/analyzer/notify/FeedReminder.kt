@@ -32,16 +32,16 @@ import kotlinx.coroutines.launch
 object FeedReminder {
 
     const val CHANNEL_ID = "feed_reminders"
-    const val NOTIFICATION_ID = 4202
     const val LEAD_MINUTES = 10L
     const val EXTRA_LAST_FEED = "feed_scheduled_for"
+    const val EXTRA_PROFILE_ID = "feed_profile_id"
     private const val ALARM_REQUEST = 4202
 
     /** Schedule the reminder [delayMs] from now, tied to the [lastFeedTs] it was computed from. */
-    fun schedule(context: Context, delayMs: Long, lastFeedTs: Long) {
+    fun schedule(context: Context, delayMs: Long, lastFeedTs: Long, profileId: String) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val triggerAt = System.currentTimeMillis() + delayMs.coerceAtLeast(1_000L)
-        val pi = alarmIntent(context, lastFeedTs)
+        val pi = alarmIntent(context, lastFeedTs, profileId)
         val canExact =
             Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
         runCatching {
@@ -55,20 +55,21 @@ object FeedReminder {
         }
     }
 
-    fun cancel(context: Context) {
+    fun cancel(context: Context, profileId: String) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        am.cancel(alarmIntent(context, 0L))
+        am.cancel(alarmIntent(context, 0L, profileId))
     }
 
-    private fun alarmIntent(context: Context, lastFeedTs: Long): PendingIntent {
+    private fun alarmIntent(context: Context, lastFeedTs: Long, profileId: String): PendingIntent {
         val intent = Intent(context, FeedAlarmReceiver::class.java).apply {
             putExtra(EXTRA_LAST_FEED, lastFeedTs)
+            putExtra(EXTRA_PROFILE_ID, profileId)
         }
         // Same request code -> FLAG_UPDATE_CURRENT refreshes the extra so a newer feed replaces
         // the pending alarm (and cancel() matches it by request code, ignoring the extra).
         return PendingIntent.getBroadcast(
             context,
-            ALARM_REQUEST,
+            ALARM_REQUEST + profileId.hashCode(),
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
@@ -90,9 +91,9 @@ object FeedReminder {
     }
 
     /** Build + post the "feeding time is near" notification. Called from [FeedAlarmReceiver]. */
-    suspend fun showReminder(context: Context, scheduledFor: Long) {
+    suspend fun showReminder(context: Context, scheduledFor: Long, profileId: String) {
         val repo = CryRepository.get(context)
-        val lastFeed = repo.lastFeedTimestamp()
+        val lastFeed = repo.lastFeedTimestamp(profileId)
         // A newer feed happened after we scheduled this (or the log was cleared): skip - a fresh
         // reminder was already queued for the new feed.
         if (lastFeed == null || lastFeed != scheduledFor) return
@@ -100,7 +101,7 @@ object FeedReminder {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         ensureChannel(context)
 
-        val profile = repo.getProfile()
+        val profile = repo.profileById(profileId) ?: return
         val name = when (currentAppLang) {
             AppLang.EN -> if (profile.hasName) profile.name else "baby"
             AppLang.EL -> profile.displayNameNominative(langIsEnglish = false)
@@ -111,7 +112,7 @@ object FeedReminder {
         }
         val pi = PendingIntent.getActivity(
             context,
-            1,
+            ALARM_REQUEST + profileId.hashCode(),
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
@@ -127,7 +128,7 @@ object FeedReminder {
             .build()
 
         runCatching {
-            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+            NotificationManagerCompat.from(context).notify(ALARM_REQUEST + profileId.hashCode(), notification)
         }
     }
 
@@ -146,11 +147,12 @@ object FeedReminder {
 class FeedAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val scheduledFor = intent.getLongExtra(FeedReminder.EXTRA_LAST_FEED, 0L)
+        val profileId = intent.getStringExtra(FeedReminder.EXTRA_PROFILE_ID) ?: return
         val result = goAsync()
         val appContext = context.applicationContext
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                FeedReminder.showReminder(appContext, scheduledFor)
+                FeedReminder.showReminder(appContext, scheduledFor, profileId)
             } finally {
                 result.finish()
             }

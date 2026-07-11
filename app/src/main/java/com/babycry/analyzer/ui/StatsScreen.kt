@@ -49,12 +49,13 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     var stats by remember { mutableStateOf<StatsSummary?>(null) }
     val language by viewModel.language.collectAsState()
     val profile by viewModel.profile.collectAsState()
+    val feedbackCount by viewModel.feedbackCount.collectAsState()
     val events by viewModel.recentEvents.collectAsState()
     val feedings by viewModel.recentFeedings.collectAsState()
     val diapers by viewModel.recentDiapers.collectAsState()
     val tummy by viewModel.recentTummy.collectAsState()
 
-    LaunchedEffect(language, profile.id) { stats = viewModel.loadStats() }
+    LaunchedEffect(language, profile.id, events, feedbackCount) { stats = viewModel.loadStats() }
 
     Column(
         modifier = modifier

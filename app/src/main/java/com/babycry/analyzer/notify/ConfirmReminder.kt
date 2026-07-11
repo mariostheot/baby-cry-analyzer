@@ -32,15 +32,15 @@ import kotlinx.coroutines.launch
 object ConfirmReminder {
 
     const val CHANNEL_ID = "confirm_reminders"
-    const val NOTIFICATION_ID = 4201
     const val EXTRA_OPEN_CONFIRM = "com.babycry.analyzer.OPEN_CONFIRM"
     const val EXTRA_PROFILE_ID = "com.babycry.analyzer.PROFILE_ID"
+    const val EXTRA_EVENT_ID = "com.babycry.analyzer.EVENT_ID"
     private const val ALARM_REQUEST = 4201
 
-    fun schedule(context: Context, delayMinutes: Long, profileId: String = CryRepository.get(context).currentProfileId()) {
+    fun schedule(context: Context, delayMinutes: Long, profileId: String, eventId: Long) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val triggerAt = System.currentTimeMillis() + delayMinutes.coerceAtLeast(1) * 60_000L
-        val pi = alarmIntent(context, profileId)
+        val pi = alarmIntent(context, profileId, eventId)
         val canExact =
             Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
         runCatching {
@@ -55,15 +55,20 @@ object ConfirmReminder {
         }
     }
 
-    fun cancel(context: Context, profileId: String = CryRepository.get(context).currentProfileId()) {
+    fun cancel(context: Context, profileId: String, eventId: Long) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        am.cancel(alarmIntent(context, profileId))
+        am.cancel(alarmIntent(context, profileId, eventId))
     }
 
-    private fun alarmIntent(context: Context, profileId: String): PendingIntent {
-        val request = ALARM_REQUEST + profileId.hashCode()
+    fun cancelAllForProfile(context: Context, profileId: String, eventIds: List<Long>) {
+        eventIds.forEach { cancel(context, profileId, it) }
+    }
+
+    private fun alarmIntent(context: Context, profileId: String, eventId: Long): PendingIntent {
+        val request = ALARM_REQUEST + eventId.hashCode()
         val intent = Intent(context, ConfirmAlarmReceiver::class.java).apply {
             putExtra(EXTRA_PROFILE_ID, profileId)
+            putExtra(EXTRA_EVENT_ID, eventId)
         }
         return PendingIntent.getBroadcast(
             context,
@@ -89,9 +94,9 @@ object ConfirmReminder {
     }
 
     /** Build + post the "why did it cry?" notification. Called from [ConfirmAlarmReceiver]. */
-    suspend fun showReminder(context: Context, profileId: String) {
+    suspend fun showReminder(context: Context, profileId: String, eventId: Long) {
         val repo = CryRepository.get(context)
-        val pending = repo.pendingConfirmation(profileId) ?: return
+        val pending = repo.pendingConfirmationForEvent(profileId, eventId) ?: return
 
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
 
@@ -110,10 +115,11 @@ object ConfirmReminder {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(EXTRA_OPEN_CONFIRM, true)
             putExtra(EXTRA_PROFILE_ID, profileId)
+            putExtra(EXTRA_EVENT_ID, eventId)
         }
         val pi = PendingIntent.getActivity(
             context,
-            0,
+            eventId.hashCode(),
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
@@ -128,7 +134,7 @@ object ConfirmReminder {
             .build()
 
         runCatching {
-            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+            NotificationManagerCompat.from(context).notify(ALARM_REQUEST + eventId.hashCode(), notification)
         }
     }
 
@@ -148,11 +154,13 @@ class ConfirmAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val profileId = intent.getStringExtra(ConfirmReminder.EXTRA_PROFILE_ID)
             ?: CryRepository.get(context).currentProfileId()
+        val eventId = intent.getLongExtra(ConfirmReminder.EXTRA_EVENT_ID, 0L)
+        if (eventId <= 0L) return
         val result = goAsync()
         val appContext = context.applicationContext
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                ConfirmReminder.showReminder(appContext, profileId)
+                ConfirmReminder.showReminder(appContext, profileId, eventId)
             } finally {
                 result.finish()
             }

@@ -76,6 +76,7 @@ fun SettingsScreen(
 ) {
     val profile by viewModel.profile.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
+    val events by viewModel.recentEvents.collectAsState()
     val personalization by viewModel.personalizationEnabled.collectAsState()
     val language by viewModel.language.collectAsState()
     val tummyReminderOn by viewModel.tummyReminderEnabled.collectAsState()
@@ -87,7 +88,7 @@ fun SettingsScreen(
 
     var dataset by remember { mutableStateOf<Pair<Int, Long>?>(null) }
     var backupRecordings by remember { mutableStateOf(0) }
-    LaunchedEffect(profile.id, profiles, lastBackupAt) {
+    LaunchedEffect(profile.id, profiles, events, lastBackupAt) {
         dataset = viewModel.datasetInfo()
         backupRecordings = viewModel.backupRecordingCount()
     }
@@ -96,7 +97,7 @@ fun SettingsScreen(
     var birth by remember(profile) { mutableStateOf(profile.birthMillis) }
     var gender by remember(profile) { mutableStateOf(profile.gender) }
     var showPicker by remember { mutableStateOf(false) }
-    var justSaved by remember { mutableStateOf(false) }
+    var justSaved by remember(profile.id) { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<Confirm?>(null) }
     var deleteBabyId by remember { mutableStateOf<String?>(null) }
 

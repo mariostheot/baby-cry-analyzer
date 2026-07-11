@@ -381,7 +381,7 @@ private fun CryRow(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
                 if (confirmed != null) {
-                    val ok = confirmed.ordinal == event.predictedIndex
+                    val ok = event.confirmedIndex == event.predictedIndex
                     Text(
                         text = if (ok) tr("✓ επιβεβαιώθηκε")
                         else correctionLabel(confirmed),

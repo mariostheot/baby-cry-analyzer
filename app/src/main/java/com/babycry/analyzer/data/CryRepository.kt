@@ -186,43 +186,82 @@ class CryRepository private constructor(
         // Rebuild the personalization from the current (clean) set - covers both the added
         // corrected example and the case where we only removed a stale one.
         rebuildPersonalization()
-        val pendingProfileId = event.profileId.ifBlank { activeProfileId() }
-        if (pendingId(pendingProfileId) == eventId) clearPending(pendingProfileId)
+        removePending(event.profileId.ifBlank { activeProfileId() }, eventId)
     }
 
     // ---- Delayed confirmation ("why did the baby cry?") ----------------------
 
-    /** The most recent detected cry still awaiting the parent's confirmation, or null. */
+    /** The oldest detected cry still awaiting the parent's confirmation, or null. */
     suspend fun pendingConfirmation(profileId: String = activeProfileId()): CryEvent? = withContext(Dispatchers.IO) {
         migrateLegacyPendingIfNeeded()
-        val id = pendingId(profileId).takeIf { it > 0L } ?: return@withContext null
-        val event = cryDao.byId(id)
-        if (event == null || event.profileId != profileId || !event.cryDetected || event.confirmedIndex != null) {
-            clearPending(profileId)
-            null
-        } else {
-            event
+        val validIds = mutableListOf<Long>()
+        var first: CryEvent? = null
+        for (id in pendingIds(profileId)) {
+            val event = cryDao.byId(id)
+            if (event != null && event.profileId == profileId && event.cryDetected && event.confirmedIndex == null) {
+                validIds += id
+                if (first == null) first = event
+            }
         }
+        writePendingIds(profileId, validIds)
+        first
     }
 
-    fun dismissPending() = clearPending(activeProfileId())
+    /** True only while the given event is still queued for delayed confirmation. */
+    suspend fun pendingConfirmationForEvent(profileId: String, eventId: Long): CryEvent? =
+        withContext(Dispatchers.IO) {
+            migrateLegacyPendingIfNeeded()
+            if (eventId !in pendingIds(profileId)) return@withContext null
+            val event = cryDao.byId(eventId)
+            if (event == null || event.profileId != profileId || !event.cryDetected || event.confirmedIndex != null) {
+                removePending(profileId, eventId)
+                null
+            } else {
+                event
+            }
+        }
 
-    private fun pendingId(profileId: String): Long =
-        profilePrefs.getLong(pendingIdKey(profileId), 0L)
+    fun dismissPending(profileId: String = activeProfileId()) {
+        pendingIds(profileId).firstOrNull()?.let { removePending(profileId, it) }
+    }
 
-    private fun setPending(eventId: Long) {
-        val profileId = activeProfileId()
-        profilePrefs.edit()
-            .putLong(pendingIdKey(profileId), eventId)
-            .putLong(pendingAtKey(profileId), System.currentTimeMillis())
-            .apply()
+    fun pendingEventIds(profileId: String): List<Long> = pendingIds(profileId)
+
+    fun focusPendingEvent(profileId: String, eventId: Long) {
+        val ids = pendingIds(profileId)
+        if (eventId in ids) writePendingIds(profileId, listOf(eventId) + ids.filterNot { it == eventId })
+    }
+
+    suspend fun profileIdForEvent(eventId: Long): String? =
+        withContext(Dispatchers.IO) { cryDao.byId(eventId)?.profileId }
+
+    private fun setPending(eventId: Long, profileId: String = activeProfileId()) {
+        val ids = pendingIds(profileId).toMutableList()
+        if (eventId !in ids) ids += eventId
+        writePendingIds(profileId, ids)
+    }
+
+    private fun removePending(profileId: String, eventId: Long) {
+        writePendingIds(profileId, pendingIds(profileId).filterNot { it == eventId })
     }
 
     private fun clearPending(profileId: String) {
-        profilePrefs.edit()
-            .remove(pendingIdKey(profileId))
-            .remove(pendingAtKey(profileId))
-            .apply()
+        profilePrefs.edit().remove(pendingIdsKey(profileId)).apply()
+    }
+
+    private fun pendingIds(profileId: String): List<Long> =
+        runCatching {
+            val arr = JSONArray(profilePrefs.getString(pendingIdsKey(profileId), "[]"))
+            (0 until arr.length()).mapNotNull { i -> arr.optLong(i, 0L).takeIf { it > 0L } }
+        }.getOrDefault(emptyList())
+
+    private fun writePendingIds(profileId: String, ids: List<Long>) {
+        val unique = ids.distinct()
+        val encoded = JSONArray().apply { unique.forEach(::put) }.toString()
+        profilePrefs.edit().apply {
+            if (unique.isEmpty()) remove(pendingIdsKey(profileId))
+            else putString(pendingIdsKey(profileId), encoded)
+        }.apply()
     }
 
     private suspend fun migrateLegacyPendingIfNeeded() {
@@ -231,12 +270,8 @@ class CryRepository private constructor(
         val legacyEvent = cryDao.byId(legacyId)
         if (legacyEvent != null && legacyEvent.cryDetected && legacyEvent.confirmedIndex == null) {
             val profileId = legacyEvent.profileId.ifBlank { activeProfileId() }
-            profilePrefs.edit()
-                .putLong(pendingIdKey(profileId), legacyId)
-                .putLong(pendingAtKey(profileId), profilePrefs.getLong(PENDING_AT, System.currentTimeMillis()))
-                .remove(PENDING_ID)
-                .remove(PENDING_AT)
-                .apply()
+            setPending(legacyId, profileId)
+            clearLegacyPending()
         } else {
             clearLegacyPending()
         }
@@ -250,7 +285,8 @@ class CryRepository private constructor(
         val editor = profilePrefs.edit()
         for (key in profilePrefs.all.keys) {
             if (key == PENDING_ID || key == PENDING_AT ||
-                key.startsWith("$PENDING_ID:") || key.startsWith("$PENDING_AT:")
+                key.startsWith("$PENDING_ID:") || key.startsWith("$PENDING_AT:") ||
+                key.startsWith("$PENDING_IDS:")
             ) {
                 editor.remove(key)
             }
@@ -316,16 +352,17 @@ class CryRepository private constructor(
         }
     }
 
-    suspend fun lastFeedTimestamp(): Long? = withContext(Dispatchers.IO) { feedingDao.last(activeProfileId())?.timestamp }
+    suspend fun lastFeedTimestamp(profileId: String = activeProfileId()): Long? =
+        withContext(Dispatchers.IO) { feedingDao.last(profileId)?.timestamp }
 
     /**
      * When to fire the "feeding time is near" heads-up, as (delayFromNowMs, lastFeedTimestamp),
      * or null if we can't/shouldn't (no feed logged yet, or the lead time already passed). Uses
      * the age-appropriate feeding interval and warns [FeedReminder.LEAD_MINUTES] before it.
      */
-    suspend fun feedReminderPlan(): Pair<Long, Long>? = withContext(Dispatchers.IO) {
-        val last = feedingDao.last(activeProfileId())?.timestamp ?: return@withContext null
-        val profile = getProfile()
+    suspend fun feedReminderPlan(profileId: String = activeProfileId()): Pair<Long, Long>? = withContext(Dispatchers.IO) {
+        val last = feedingDao.last(profileId)?.timestamp ?: return@withContext null
+        val profile = profileById(profileId) ?: return@withContext null
         val intervalHours = com.babycry.analyzer.context.ContextPrior
             .expectedFeedIntervalHours(profile.ageMonths(), profile.ageDays())
         val remindAt = last + (intervalHours * 3_600_000L).toLong() -
@@ -486,6 +523,7 @@ class CryRepository private constructor(
 
     suspend fun deleteProfile(id: String) = withContext(Dispatchers.IO) {
         clearProfileData(id)
+        clearPending(id)
         val remaining = getProfiles().filterNot { it.id == id }
         val activeWas = getProfile().id
         val newActive = if (activeWas == id) remaining.firstOrNull()?.id else activeWas
@@ -575,7 +613,7 @@ class CryRepository private constructor(
         feedbackDao.deleteByEvent(id)
         clipStore.deleteClip(id)
         rebuildPersonalization()
-        if (event?.profileId?.let { pendingId(it) } == id) clearPending(event.profileId)
+        event?.profileId?.let { removePending(it, id) }
     }
 
     // ---- Personal dataset (exportable) ---------------------------------------
@@ -888,7 +926,7 @@ class CryRepository private constructor(
 
     suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
         val root = JSONObject()
-        root.put("version", 2)
+        root.put("version", 3)
         root.put("exportedAt", System.currentTimeMillis())
 
         val profile = getProfile()
@@ -911,6 +949,13 @@ class CryRepository private constructor(
         }
         root.put("profiles", profilesArr)
         root.put("activeProfile", profile.id)
+        root.put("settings", JSONObject().apply {
+            put("language", getLanguage().code)
+            put("personalizationEnabled", isPersonalizationEnabled())
+            put("tummyReminderEnabled", isTummyReminderEnabled())
+            put("tummyReminderHourAm", tummyReminderHourAm())
+            put("tummyReminderHourPm", tummyReminderHourPm())
+        })
 
         val eventsArr = JSONArray()
         for (e in cryDao.allEventsAllProfiles()) {
@@ -983,6 +1028,17 @@ class CryRepository private constructor(
         }
         root.put("tummy", tummyArr)
 
+        val pendingArr = JSONArray()
+        for (p in getProfiles()) {
+            for (eventId in pendingEventIds(p.id)) {
+                pendingArr.put(JSONObject().apply {
+                    put("profileId", p.id)
+                    put("eventId", eventId)
+                })
+            }
+        }
+        root.put("pending", pendingArr)
+
         root.toString()
     }
 
@@ -1025,6 +1081,15 @@ class CryRepository private constructor(
         // Old clips are keyed by the previous event ids, which no longer match.
         clipStore.clearAll()
         clearAllPending()
+
+        root.optJSONObject("settings")?.let { settings ->
+            val lang = if (settings.optString("language", "el") == "en") AppLang.EN else AppLang.EL
+            setLanguage(lang)
+            setPersonalizationEnabled(settings.optBoolean("personalizationEnabled", true))
+            setTummyReminderEnabled(settings.optBoolean("tummyReminderEnabled", true))
+            setTummyReminderHourAm(settings.optInt("tummyReminderHourAm", 11))
+            setTummyReminderHourPm(settings.optInt("tummyReminderHourPm", 18))
+        }
 
         var restored = 0
         val eventIdMap = HashMap<Long, Long>()
@@ -1115,6 +1180,20 @@ class CryRepository private constructor(
                 )
             }
         }
+        root.optJSONArray("pending")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val profileId = o.optString("profileId", "")
+                val oldEventId = o.optLong("eventId", 0L)
+                val newEventId = eventIdMap[oldEventId]
+                if (profileId.isNotBlank() && newEventId != null) {
+                    val event = cryDao.byId(newEventId)
+                    if (event?.profileId == profileId && event.cryDetected && event.confirmedIndex == null) {
+                        setPending(newEventId, profileId)
+                    }
+                }
+            }
+        }
 
         rebuildPersonalization()
         restored
@@ -1146,9 +1225,7 @@ class CryRepository private constructor(
         )
     }
 
-    private fun pendingIdKey(profileId: String): String = "$PENDING_ID:$profileId"
-
-    private fun pendingAtKey(profileId: String): String = "$PENDING_AT:$profileId"
+    private fun pendingIdsKey(profileId: String): String = "$PENDING_IDS:$profileId"
 
     companion object {
         private const val PROFILE_NAME = "baby_name"
@@ -1159,6 +1236,7 @@ class CryRepository private constructor(
         private const val PERSONALIZATION_ON = "personalization_on"
         private const val PENDING_ID = "pending_confirm_id"
         private const val PENDING_AT = "pending_confirm_at"
+        private const val PENDING_IDS = "pending_confirm_ids"
         private const val APP_LANG = "app_lang"
         private const val LAST_BACKUP_AT = "last_backup_at"
         private const val TUMMY_REMINDER_ON = "tummy_reminder_on"
