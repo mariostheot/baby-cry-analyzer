@@ -13,8 +13,10 @@ android {
         // minSdk 26 lets us ship an adaptive launcher icon without bitmap fallbacks.
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // Overridable by CI (see .github/workflows/build.yml) so each cloud build is a
+        // proper incrementing update; falls back to 1/1.0 for local builds.
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
+        versionName = System.getenv("VERSION_NAME") ?: "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

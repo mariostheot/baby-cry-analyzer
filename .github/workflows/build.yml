@@ -92,7 +92,29 @@ jobs:
             --out app/src/main/assets/yamnet.tflite
           echo "regenerated yamnet.tflite:"; ls -la app/src/main/assets/yamnet.tflite
 
+      # Use a STABLE debug signing key so every APK is signed identically. This lets the
+      # phone install a new build straight over the old one (a normal update) WITHOUT
+      # uninstalling, so personalization/history/profiles are preserved automatically.
+      # The key lives only in the GitHub secret DEBUG_KEYSTORE_B64 (never committed).
+      # If the secret is missing the build still works, but with an ephemeral key.
+      - name: Install stable debug signing key
+        env:
+          DEBUG_KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$DEBUG_KEYSTORE_B64" ]; then
+            mkdir -p ~/.android
+            printf '%s' "$DEBUG_KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+            echo "Stable debug keystore installed ($(stat -c%s ~/.android/debug.keystore) bytes)."
+          else
+            echo "WARN: secret DEBUG_KEYSTORE_B64 not set -> ephemeral key; reinstalling may require uninstall."
+          fi
+
+      # versionCode/versionName come from the CI run number so every build is a proper,
+      # incrementing update (read by app/build.gradle.kts).
       - name: Build debug APK
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: 1.0.${{ github.run_number }}
         run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
