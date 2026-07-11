@@ -5,6 +5,7 @@ import android.util.Base64
 import com.babycry.analyzer.ml.CryAnalysis
 import com.babycry.analyzer.ml.CryAnalyzer
 import com.babycry.analyzer.model.BabyProfile
+import com.babycry.analyzer.model.BabyGender
 import com.babycry.analyzer.model.CryReason
 import com.babycry.analyzer.model.DiaperType
 import com.babycry.analyzer.ui.i18n.AppLang
@@ -61,11 +62,21 @@ class CryRepository private constructor(
     val hasModel: Boolean get() = analyzer.hasModel
     val tier2Available: Boolean get() = analyzer.personalization.tier2Available
 
-    fun recentEvents(): Flow<List<CryEvent>> = cryDao.recent()
-    fun feedbackCount(): Flow<Int> = feedbackDao.count()
-    fun recentFeedings(): Flow<List<FeedingEvent>> = feedingDao.recent()
-    fun recentDiapers(): Flow<List<DiaperEvent>> = diaperDao.recent()
-    fun recentTummy(): Flow<List<TummyTimeEvent>> = tummyDao.recent()
+    fun recentEvents(profileId: String = activeProfileId()): Flow<List<CryEvent>> = cryDao.recent(profileId)
+    fun feedbackCount(profileId: String = activeProfileId()): Flow<Int> = feedbackDao.count(profileId)
+    fun recentFeedings(profileId: String = activeProfileId()): Flow<List<FeedingEvent>> = feedingDao.recent(profileId)
+    fun recentDiapers(profileId: String = activeProfileId()): Flow<List<DiaperEvent>> = diaperDao.recent(profileId)
+    fun recentTummy(profileId: String = activeProfileId()): Flow<List<TummyTimeEvent>> = tummyDao.recent(profileId)
+
+    suspend fun assignLegacyDataToActiveProfile() = withContext(Dispatchers.IO) {
+        val profileId = activeProfileId()
+        if (profileId.isBlank()) return@withContext
+        cryDao.assignLegacy(profileId)
+        feedbackDao.assignLegacy(profileId)
+        feedingDao.assignLegacy(profileId)
+        diaperDao.assignLegacy(profileId)
+        tummyDao.assignLegacy(profileId)
+    }
 
     fun isPersonalizationEnabled(): Boolean = profilePrefs.getBoolean(PERSONALIZATION_ON, true)
 
@@ -83,7 +94,7 @@ class CryRepository private constructor(
      * deleted/restored/relabelled examples cannot leave old fine-tuned weights behind.
      */
     private suspend fun rebuildPersonalization() = withContext(Dispatchers.Default) {
-        val all = feedbackDao.all()
+        val all = feedbackDao.all(activeProfileId())
         analyzer.personalization.reset()
         analyzer.personalization.updatePrototypes(all)
         analyzer.personalization.maybeTrain(all)
@@ -105,10 +116,12 @@ class CryRepository private constructor(
 
     suspend fun saveEvent(analysis: CryAnalysis, waveform: FloatArray? = null): Long =
         withContext(Dispatchers.IO) {
+            val profileId = activeProfileId()
             val r = analysis.result
             val predicted = r.topReason?.let { labels.indexOf(it) } ?: -1
             val id = cryDao.insert(
                 CryEvent(
+                    profileId = profileId,
                     timestamp = System.currentTimeMillis(),
                     cryDetected = r.cryDetected,
                     predictedIndex = predicted,
@@ -162,6 +175,7 @@ class CryRepository private constructor(
         if (emb != null) {
             feedbackDao.insert(
                 FeedbackExample(
+                    profileId = event.profileId.ifBlank { activeProfileId() },
                     timestamp = System.currentTimeMillis(),
                     labelIndex = idx,
                     embedding = emb,
@@ -181,7 +195,7 @@ class CryRepository private constructor(
     suspend fun pendingConfirmation(): CryEvent? = withContext(Dispatchers.IO) {
         val id = pendingId().takeIf { it > 0L } ?: return@withContext null
         val event = cryDao.byId(id)
-        if (event == null || !event.cryDetected || event.confirmedIndex != null) {
+        if (event == null || event.profileId != activeProfileId() || !event.cryDetected || event.confirmedIndex != null) {
             clearPending()
             null
         } else {
@@ -205,15 +219,15 @@ class CryRepository private constructor(
     }
 
     suspend fun logFeeding(note: String? = null) = withContext(Dispatchers.IO) {
-        feedingDao.insert(FeedingEvent(timestamp = System.currentTimeMillis(), note = note))
+        feedingDao.insert(FeedingEvent(profileId = activeProfileId(), timestamp = System.currentTimeMillis(), note = note))
     }
 
     suspend fun logDiaper(type: DiaperType) = withContext(Dispatchers.IO) {
-        diaperDao.insert(DiaperEvent(timestamp = System.currentTimeMillis(), type = type.name))
+        diaperDao.insert(DiaperEvent(profileId = activeProfileId(), timestamp = System.currentTimeMillis(), type = type.name))
     }
 
     suspend fun logTummy() = withContext(Dispatchers.IO) {
-        tummyDao.insert(TummyTimeEvent(timestamp = System.currentTimeMillis()))
+        tummyDao.insert(TummyTimeEvent(profileId = activeProfileId(), timestamp = System.currentTimeMillis()))
     }
 
     // ---- Tummy time: age-based daily goal + reminder --------------------------
@@ -224,7 +238,7 @@ class CryRepository private constructor(
 
     /** How many tummy-time sessions have been logged since the start of today. */
     suspend fun tummyDoneToday(): Int = withContext(Dispatchers.IO) {
-        tummyDao.countSince(startOfToday())
+        tummyDao.countSince(activeProfileId(), startOfToday())
     }
 
     private fun startOfToday(): Long = java.util.Calendar.getInstance().apply {
@@ -255,12 +269,12 @@ class CryRepository private constructor(
     }
 
     suspend fun hoursSinceLastFeed(): Float? = withContext(Dispatchers.IO) {
-        feedingDao.last()?.let {
+        feedingDao.last(activeProfileId())?.let {
             (System.currentTimeMillis() - it.timestamp) / 3_600_000f
         }
     }
 
-    suspend fun lastFeedTimestamp(): Long? = withContext(Dispatchers.IO) { feedingDao.last()?.timestamp }
+    suspend fun lastFeedTimestamp(): Long? = withContext(Dispatchers.IO) { feedingDao.last(activeProfileId())?.timestamp }
 
     /**
      * When to fire the "feeding time is near" heads-up, as (delayFromNowMs, lastFeedTimestamp),
@@ -268,7 +282,7 @@ class CryRepository private constructor(
      * the age-appropriate feeding interval and warns [FeedReminder.LEAD_MINUTES] before it.
      */
     suspend fun feedReminderPlan(): Pair<Long, Long>? = withContext(Dispatchers.IO) {
-        val last = feedingDao.last()?.timestamp ?: return@withContext null
+        val last = feedingDao.last(activeProfileId())?.timestamp ?: return@withContext null
         val profile = getProfile()
         val intervalHours = com.babycry.analyzer.context.ContextPrior
             .expectedFeedIntervalHours(profile.ageMonths(), profile.ageDays())
@@ -279,15 +293,16 @@ class CryRepository private constructor(
     }
 
     suspend fun resetPersonalization() = withContext(Dispatchers.Default) {
-        feedbackDao.clear()
+        feedbackDao.clear(activeProfileId())
         analyzer.personalization.reset()
         analyzer.personalization.updatePrototypes(emptyList())
     }
 
     suspend fun stats(): StatsSummary = withContext(Dispatchers.Default) {
+        val profileId = activeProfileId()
         val n = labels.size
         val confusion = Array(n) { IntArray(n) }
-        val confirmed = cryDao.confirmedEvents()
+        val confirmed = cryDao.confirmedEvents(profileId)
         var correct = 0
         val perClassTotal = IntArray(n)
         val perClassCorrect = IntArray(n)
@@ -308,7 +323,7 @@ class CryRepository private constructor(
 
         val distribution = IntArray(n)
         var cries = 0
-        for (e in cryDao.allEvents()) {
+        for (e in cryDao.allEvents(profileId)) {
             if (!e.cryDetected) continue
             cries++
             // Prefer the parent's correction when present; else the model's prediction.
@@ -324,7 +339,7 @@ class CryRepository private constructor(
                 if (perClassTotal[it] > 0) perClassCorrect[it].toFloat() / perClassTotal[it] else null
             },
             confusion = confusion,
-            feedbackCount = feedbackDao.countNow(),
+            feedbackCount = feedbackDao.countNow(profileId),
             hasModel = hasModel,
             tier2Available = tier2Available,
             tier2Ready = analyzer.personalization.tier2Ready,
@@ -360,15 +375,19 @@ class CryRepository private constructor(
         return list.firstOrNull { it.id == activeId } ?: list.first()
     }
 
+    private fun activeProfileId(): String = getProfile().id
+
     suspend fun addProfile(
         name: String,
         birthMillis: Long?,
         colicConfirmed: Boolean = false,
+        gender: BabyGender = BabyGender.UNKNOWN,
     ): String = withContext(Dispatchers.IO) {
         val list = getProfiles().toMutableList()
         val p = BabyProfile(
             name = name.trim(),
             birthMillis = birthMillis,
+            gender = gender,
             id = newProfileId(),
             colicConfirmed = colicConfirmed,
         )
@@ -378,22 +397,27 @@ class CryRepository private constructor(
     }
 
     /** Edits the currently active baby (creating one if there isn't any yet). */
-    suspend fun updateActiveProfile(name: String, birthMillis: Long?) = withContext(Dispatchers.IO) {
+    suspend fun updateActiveProfile(
+        name: String,
+        birthMillis: Long?,
+        gender: BabyGender = BabyGender.UNKNOWN,
+    ) = withContext(Dispatchers.IO) {
         val list = getProfiles().toMutableList()
         val activeId = getProfile().id
         val idx = list.indexOfFirst { activeId.isNotBlank() && it.id == activeId }
         if (idx >= 0) {
-            list[idx] = list[idx].copy(name = name.trim(), birthMillis = birthMillis)
+            list[idx] = list[idx].copy(name = name.trim(), birthMillis = birthMillis, gender = gender)
             persistProfiles(list, list[idx].id)
         } else {
-            val p = BabyProfile(name = name.trim(), birthMillis = birthMillis, id = newProfileId())
+            val p = BabyProfile(name = name.trim(), birthMillis = birthMillis, gender = gender, id = newProfileId())
             list.add(p)
             persistProfiles(list, p.id)
         }
     }
 
     /** Backwards-compatible alias used by existing callers: edits the active baby. */
-    suspend fun setProfile(profile: BabyProfile) = updateActiveProfile(profile.name, profile.birthMillis)
+    suspend fun setProfile(profile: BabyProfile) =
+        updateActiveProfile(profile.name, profile.birthMillis, profile.gender)
 
     /** Flags/unflags pediatrician-confirmed colic for the active baby (drives the context prior). */
     suspend fun setColicConfirmed(enabled: Boolean) = withContext(Dispatchers.IO) {
@@ -411,10 +435,24 @@ class CryRepository private constructor(
     }
 
     suspend fun deleteProfile(id: String) = withContext(Dispatchers.IO) {
+        clearProfileData(id)
         val remaining = getProfiles().filterNot { it.id == id }
         val activeWas = getProfile().id
         val newActive = if (activeWas == id) remaining.firstOrNull()?.id else activeWas
         persistProfiles(remaining, newActive)
+    }
+
+    private suspend fun clearProfileData(profileId: String) {
+        clearProfileHistory(profileId)
+        feedbackDao.clear(profileId)
+    }
+
+    private suspend fun clearProfileHistory(profileId: String) {
+        cryDao.allEvents(profileId).forEach { clipStore.deleteClip(it.id) }
+        cryDao.clear(profileId)
+        feedingDao.clear(profileId)
+        diaperDao.clear(profileId)
+        tummyDao.clear(profileId)
     }
 
     private fun newProfileId(): String = java.util.UUID.randomUUID().toString()
@@ -426,6 +464,7 @@ class CryRepository private constructor(
             BabyProfile(
                 name = o.optString("name", ""),
                 birthMillis = if (o.has("birthMillis")) o.optLong("birthMillis") else null,
+                gender = BabyGender.fromNameOrNull(o.optString("gender", null)),
                 id = o.optString("id", "").ifBlank { newProfileId() },
                 colicConfirmed = o.optBoolean("colicConfirmed", false),
             )
@@ -439,6 +478,7 @@ class CryRepository private constructor(
                 put("id", p.id)
                 put("name", p.name)
                 p.birthMillis?.let { put("birthMillis", it) }
+                put("gender", p.gender.name)
                 put("colicConfirmed", p.colicConfirmed)
             })
         }
@@ -463,15 +503,17 @@ class CryRepository private constructor(
         currentAppLang = lang
     }
 
+    fun lastBackupAt(): Long = profilePrefs.getLong(LAST_BACKUP_AT, 0L)
+
+    fun markBackupCreated() {
+        profilePrefs.edit().putLong(LAST_BACKUP_AT, System.currentTimeMillis()).apply()
+    }
+
     /** Clears the cry history and feeding log (what the Stats screen counts). Keeps what the
      *  model learned from you (feedback examples / personalization). Also drops the saved
      *  recordings, since they're tied to the deleted events. */
     suspend fun clearHistory() = withContext(Dispatchers.IO) {
-        cryDao.clear()
-        feedingDao.clear()
-        diaperDao.clear()
-        tummyDao.clear()
-        clipStore.clearAll()
+        clearProfileHistory(activeProfileId())
         clearPending()
     }
 
@@ -493,12 +535,12 @@ class CryRepository private constructor(
 
     /** Zips every confirmed clip + a labels.csv into [out]. Returns how many clips were written. */
     suspend fun writeDatasetZip(out: java.io.OutputStream): Int = withContext(Dispatchers.IO) {
-        clipStore.writeDatasetZip(out, cryDao.allEvents(), labels)
+        clipStore.writeDatasetZip(out, cryDao.allEvents(activeProfileId()), labels)
     }
 
     /** Confirmed cries that still have a saved recording - the parent's playable library. */
     suspend fun libraryEvents(): List<CryEvent> = withContext(Dispatchers.IO) {
-        cryDao.confirmedEvents().filter { clipStore.hasClip(it.id) }
+        cryDao.confirmedEvents(activeProfileId()).filter { clipStore.hasClip(it.id) }
     }
 
     /** Reads a saved recording back to a waveform for replay from the library. */
@@ -518,10 +560,11 @@ class CryRepository private constructor(
             "EEE dd/MM/yyyy HH:mm",
             if (lang == AppLang.EN) Locale.ENGLISH else Locale("el"),
         )
-        val events = cryDao.allEvents()
-        val feedings = feedingDao.allList()
-        val diapers = diaperDao.allList()
-        val tummy = tummyDao.allList()
+        val profileId = activeProfileId()
+        val events = cryDao.allEvents(profileId)
+        val feedings = feedingDao.allList(profileId)
+        val diapers = diaperDao.allList(profileId)
+        val tummy = tummyDao.allList(profileId)
         val stats = stats()
         val profile = getProfile()
         val cries = events.filter { it.cryDetected }
@@ -532,7 +575,7 @@ class CryRepository private constructor(
         val htmlLang = if (lang == AppLang.EN) "en" else "el"
         sb.append("<!DOCTYPE html><html lang=\"$htmlLang\"><head><meta charset=\"utf-8\">")
         sb.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
-        sb.append("<title>${trS("Αναφορά")} — ${trS("Γιατί Κλαίει;")}</title><style>")
+        sb.append("<title>${trS("Αναφορά")} — ${trS("Revekka")}</title><style>")
         sb.append(
             """
             body{font-family:-apple-system,Roboto,Segoe UI,sans-serif;margin:0;background:#f5f4f8;color:#1c1b1f}
@@ -565,8 +608,9 @@ class CryRepository private constructor(
         )
         sb.append("</style></head><body><div class=\"wrap\">")
 
-        val title = if (profile.hasName) "${trS("Αναφορά")} — ${esc(profile.name)}"
-        else "${trS("Αναφορά")} — ${trS("Γιατί Κλαίει;")}"
+        val profileNameForTitle = profile.displayNameNominative(lang == AppLang.EN)
+        val title = if (profile.hasName) "${trS("Αναφορά")} — ${esc(profileNameForTitle)}"
+        else "${trS("Αναφορά")} — ${trS("Revekka")}"
         sb.append("<h1>$title</h1>")
         sb.append("<p class=\"sub\">${trS("Δημιουργήθηκε")} ${esc(df.format(Date()))}</p>")
 
@@ -578,6 +622,27 @@ class CryRepository private constructor(
         sb.append("<div class=\"card\"><div class=\"n\">${stats.confirmedCount}</div><div class=\"l\">${trS("Επιβεβαιώσεις")}</div></div>")
         sb.append("<div class=\"card\"><div class=\"n\">${stats.feedbackCount}</div><div class=\"l\">${trS("Δείγματα εκμάθησης")}</div></div>")
         sb.append("</div>")
+
+        // ---- Compact doctor-visit summary: quick numbers a pediatrician may ask for. ----
+        val nowMs = System.currentTimeMillis()
+        val last24h = nowMs - 86_400_000L
+        val last7d = nowMs - 7L * 86_400_000L
+        val cries24 = cries.count { it.timestamp >= last24h }
+        val cries7 = cries.count { it.timestamp >= last7d }
+        val feeds24 = feedings.count { it.timestamp >= last24h }
+        val diapers24 = diapers.count { it.timestamp >= last24h }
+        val poops24 = diapers.count {
+            it.timestamp >= last24h && DiaperType.fromNameOrNull(it.type)?.hasStool == true
+        }
+        val tummy24 = tummy.count { it.timestamp >= last24h }
+        sb.append("<h2>${trS("Σύνοψη για παιδίατρο")}</h2>")
+        sb.append("<p class=\"note\">${trS("Σύντομη εικόνα για επίσκεψη: κλάματα, ταΐσματα, πάνες και tummy time από τα πρόσφατα δεδομένα.")}</p>")
+        sb.append("<div class=\"row\"><span>${trS("Κλάματα τελευταίου 24ώρου")}</span><span>$cries24</span></div>")
+        sb.append("<div class=\"row\"><span>${trS("Κλάματα τελευταίων 7 ημερών")}</span><span>$cries7</span></div>")
+        sb.append("<div class=\"row\"><span>${trS("Ταΐσματα τελευταίου 24ώρου")}</span><span>$feeds24</span></div>")
+        sb.append("<div class=\"row\"><span>${trS("Πάνες τελευταίου 24ώρου")}</span><span>$diapers24 (${trS("κακά")}: $poops24)</span></div>")
+        sb.append("<div class=\"row\"><span>${trS("Tummy time τελευταίου 24ώρου")}</span><span>$tummy24</span></div>")
+        sb.append("<p class=\"note\">${trS("Αν υπάρχουν κόκκινες σημαίες (πυρετός, δυσκολία στην αναπνοή, αφυδάτωση, ασυνήθιστο/επίμονο κλάμα), επικοινώνησε άμεσα με γιατρό.")}</p>")
 
         // ---- Long-term overview: the picture that only emerges after days/weeks of use. ----
         if (cries.isNotEmpty()) {
@@ -756,7 +821,7 @@ class CryRepository private constructor(
         }
         sb.append("</table>")
 
-        sb.append("<p class=\"foot\">${trS("«Γιατί Κλαίει;» — Δημιουργήθηκε από τον Μάριο Θεοτή. Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή.")}</p>")
+        sb.append("<p class=\"foot\">${trS("«Revekka» — Δημιουργήθηκε από τον Μάριο Θεοτή. Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή.")}</p>")
         sb.append("</div></body></html>")
         sb.toString()
     }
@@ -772,6 +837,7 @@ class CryRepository private constructor(
         root.put("profile", JSONObject().apply {
             put("name", profile.name)
             profile.birthMillis?.let { put("birthMillis", it) }
+            put("gender", profile.gender.name)
             put("colicConfirmed", profile.colicConfirmed)
         })
         // All babies (multi-profile). "profile" above stays for backwards compatibility.
@@ -781,6 +847,7 @@ class CryRepository private constructor(
                 put("id", p.id)
                 put("name", p.name)
                 p.birthMillis?.let { put("birthMillis", it) }
+                put("gender", p.gender.name)
                 put("colicConfirmed", p.colicConfirmed)
             })
         }
@@ -788,9 +855,10 @@ class CryRepository private constructor(
         root.put("activeProfile", profile.id)
 
         val eventsArr = JSONArray()
-        for (e in cryDao.allEvents()) {
+        for (e in cryDao.allEventsAllProfiles()) {
             eventsArr.put(JSONObject().apply {
                 put("id", e.id)
+                put("profileId", e.profileId)
                 put("timestamp", e.timestamp)
                 put("cryDetected", e.cryDetected)
                 put("predictedIndex", e.predictedIndex)
@@ -803,7 +871,7 @@ class CryRepository private constructor(
         root.put("events", eventsArr)
 
         val clipsArr = JSONArray()
-        for (e in cryDao.allEvents()) {
+        for (e in cryDao.allEventsAllProfiles()) {
             val wavBytes = clipStore.readClipBytes(e.id)
             val embeddingBytes = clipStore.readEmbeddingBytes(e.id)
             if (wavBytes != null || embeddingBytes != null) {
@@ -817,8 +885,9 @@ class CryRepository private constructor(
         root.put("clips", clipsArr)
 
         val fbArr = JSONArray()
-        for (f in feedbackDao.all()) {
+        for (f in feedbackDao.allAllProfiles()) {
             fbArr.put(JSONObject().apply {
+                put("profileId", f.profileId)
                 put("timestamp", f.timestamp)
                 put("labelIndex", f.labelIndex)
                 put("embedding", encodeFloats(f.embedding))
@@ -828,8 +897,9 @@ class CryRepository private constructor(
         root.put("feedback", fbArr)
 
         val feedArr = JSONArray()
-        for (fe in feedingDao.allList()) {
+        for (fe in feedingDao.allListAllProfiles()) {
             feedArr.put(JSONObject().apply {
+                put("profileId", fe.profileId)
                 put("timestamp", fe.timestamp)
                 fe.note?.let { put("note", it) }
             })
@@ -837,8 +907,9 @@ class CryRepository private constructor(
         root.put("feedings", feedArr)
 
         val diaperArr = JSONArray()
-        for (de in diaperDao.allList()) {
+        for (de in diaperDao.allListAllProfiles()) {
             diaperArr.put(JSONObject().apply {
+                put("profileId", de.profileId)
                 put("timestamp", de.timestamp)
                 put("type", de.type)
             })
@@ -846,8 +917,9 @@ class CryRepository private constructor(
         root.put("diapers", diaperArr)
 
         val tummyArr = JSONArray()
-        for (te in tummyDao.allList()) {
+        for (te in tummyDao.allListAllProfiles()) {
             tummyArr.put(JSONObject().apply {
+                put("profileId", te.profileId)
                 put("timestamp", te.timestamp)
             })
         }
@@ -867,6 +939,7 @@ class CryRepository private constructor(
                 BabyProfile(
                     name = o.optString("name", ""),
                     birthMillis = if (o.has("birthMillis")) o.optLong("birthMillis") else null,
+                    gender = BabyGender.fromNameOrNull(o.optString("gender", null)),
                     id = o.optString("id", "").ifBlank { newProfileId() },
                     colicConfirmed = o.optBoolean("colicConfirmed", false),
                 )
@@ -878,6 +951,7 @@ class CryRepository private constructor(
                 val one = BabyProfile(
                     name = p.optString("name", ""),
                     birthMillis = if (p.has("birthMillis")) p.optLong("birthMillis") else null,
+                    gender = BabyGender.fromNameOrNull(p.optString("gender", null)),
                     id = newProfileId(),
                     colicConfirmed = p.optBoolean("colicConfirmed", false),
                 )
@@ -885,11 +959,11 @@ class CryRepository private constructor(
             }
         }
 
-        cryDao.clear()
+        cryDao.clearAllProfiles()
         feedbackDao.clear()
-        feedingDao.clear()
-        diaperDao.clear()
-        tummyDao.clear()
+        feedingDao.clearAllProfiles()
+        diaperDao.clearAllProfiles()
+        tummyDao.clearAllProfiles()
         // Old clips are keyed by the previous event ids, which no longer match.
         clipStore.clearAll()
         clearPending()
@@ -901,6 +975,7 @@ class CryRepository private constructor(
                 val o = arr.getJSONObject(i)
                 val newId = cryDao.insert(
                     CryEvent(
+                        profileId = o.optString("profileId", activeProfileId()),
                         timestamp = o.getLong("timestamp"),
                         cryDetected = o.optBoolean("cryDetected", true),
                         predictedIndex = o.optInt("predictedIndex", -1),
@@ -938,6 +1013,7 @@ class CryRepository private constructor(
                 val restoredSourceEventId = eventIdMap[oldSourceEventId] ?: 0L
                 feedbackDao.insert(
                     FeedbackExample(
+                        profileId = o.optString("profileId", activeProfileId()),
                         timestamp = o.getLong("timestamp"),
                         labelIndex = o.getInt("labelIndex"),
                         embedding = decodeFloats(o.getString("embedding")),
@@ -951,6 +1027,7 @@ class CryRepository private constructor(
                 val o = arr.getJSONObject(i)
                 feedingDao.insert(
                     FeedingEvent(
+                        profileId = o.optString("profileId", activeProfileId()),
                         timestamp = o.getLong("timestamp"),
                         note = if (o.has("note")) o.getString("note") else null,
                     )
@@ -962,6 +1039,7 @@ class CryRepository private constructor(
                 val o = arr.getJSONObject(i)
                 diaperDao.insert(
                     DiaperEvent(
+                        profileId = o.optString("profileId", activeProfileId()),
                         timestamp = o.getLong("timestamp"),
                         type = o.optString("type", DiaperType.WET.name),
                     )
@@ -971,7 +1049,12 @@ class CryRepository private constructor(
         root.optJSONArray("tummy")?.let { arr ->
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                tummyDao.insert(TummyTimeEvent(timestamp = o.getLong("timestamp")))
+                tummyDao.insert(
+                    TummyTimeEvent(
+                        profileId = o.optString("profileId", activeProfileId()),
+                        timestamp = o.getLong("timestamp"),
+                    )
+                )
             }
         }
 
@@ -1015,6 +1098,7 @@ class CryRepository private constructor(
         private const val PENDING_ID = "pending_confirm_id"
         private const val PENDING_AT = "pending_confirm_at"
         private const val APP_LANG = "app_lang"
+        private const val LAST_BACKUP_AT = "last_backup_at"
         private const val TUMMY_REMINDER_ON = "tummy_reminder_on"
         private const val TUMMY_REMINDER_HOUR_AM = "tummy_reminder_hour_am"
         private const val TUMMY_REMINDER_HOUR_PM = "tummy_reminder_hour_pm"

@@ -2,6 +2,17 @@ package com.babycry.analyzer.model
 
 import java.util.Calendar
 
+enum class BabyGender {
+    UNKNOWN,
+    BOY,
+    GIRL;
+
+    companion object {
+        fun fromNameOrNull(name: String?): BabyGender =
+            entries.firstOrNull { it.name == name } ?: UNKNOWN
+    }
+}
+
 /**
  * Optional details about the baby. Stored locally (SharedPreferences), never uploaded.
  * [birthMillis] drives age-aware context priors and lets the UI greet the baby by name.
@@ -9,6 +20,7 @@ import java.util.Calendar
 data class BabyProfile(
     val name: String = "",
     val birthMillis: Long? = null,
+    val gender: BabyGender = BabyGender.UNKNOWN,
     /** Stable local id, so we can support more than one baby (e.g. siblings/twins). */
     val id: String = "",
     /**
@@ -19,6 +31,22 @@ data class BabyProfile(
     val colicConfirmed: Boolean = false,
 ) {
     val hasName: Boolean get() = name.isNotBlank()
+
+    fun displayNameNominative(langIsEnglish: Boolean): String = when {
+        !hasName -> if (langIsEnglish) "baby" else "το μωρό"
+        langIsEnglish -> name
+        gender == BabyGender.BOY -> "ο $name"
+        gender == BabyGender.GIRL -> "η $name"
+        else -> name
+    }
+
+    fun displayNameAccusative(langIsEnglish: Boolean): String = when {
+        !hasName -> if (langIsEnglish) "baby" else "το μωρό"
+        langIsEnglish -> name
+        gender == BabyGender.BOY -> "τον $name"
+        gender == BabyGender.GIRL -> "την $name"
+        else -> name
+    }
 
     /** Whole days since birth, or null if no birth date is set. Needed for the very early
      *  weeks, where feeding frequency changes week-to-week (months is too coarse). */

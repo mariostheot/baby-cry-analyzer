@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.BabyChangingStation
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Restaurant
@@ -72,6 +73,7 @@ import androidx.compose.ui.unit.sp
 import com.babycry.analyzer.data.CryEvent
 import com.babycry.analyzer.data.TummyTimeEvent
 import com.babycry.analyzer.model.AnalysisEngine
+import com.babycry.analyzer.model.BabyProfile
 import com.babycry.analyzer.model.DiaperType
 import com.babycry.analyzer.ml.CryAnalysis
 import com.babycry.analyzer.model.CryReason
@@ -97,6 +99,7 @@ fun HomeScreen(
     val profile by viewModel.profile.collectAsState()
     val pending by viewModel.pendingConfirmation.collectAsState()
     val soothing by viewModel.soothing.collectAsState()
+    val playback by viewModel.playback.collectAsState()
     val tummy by viewModel.recentTummy.collectAsState()
     var showDiaper by remember { mutableStateOf(false) }
 
@@ -120,7 +123,7 @@ fun HomeScreen(
         if (profile.hasName) {
             Spacer(Modifier.height(2.dp))
             Text(
-                text = "👶 " + profile.name + babyAgeSuffix(profile),
+                text = "👶 " + profile.displayNameNominative(currentAppLang == AppLang.EN) + babyAgeSuffix(profile),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -145,7 +148,7 @@ fun HomeScreen(
             PendingConfirmCard(
                 event = current,
                 labels = viewModel.labels,
-                babyName = profile.name,
+                profile = profile,
                 onConfirm = { viewModel.confirmPending(it) },
                 onDismiss = { viewModel.dismissPending() },
             )
@@ -164,7 +167,10 @@ fun HomeScreen(
                 feedbackGiven = state.feedbackGiven,
                 feedbackDeferred = state.feedbackDeferred,
                 canReplay = viewModel.canReplay,
+                playback = playback,
                 onReplay = { viewModel.playLastRecording() },
+                onPauseReplay = { viewModel.pauseReplay() },
+                onResumeReplay = { viewModel.resumeReplay() },
                 onCorrect = { viewModel.confirmPredictionCorrect() },
                 onCorrectTo = { viewModel.correctTo(it) },
                 onDefer = { viewModel.deferFeedback() },
@@ -377,7 +383,7 @@ private fun tummyRemainingText(done: Int, goal: Int): String {
     }
 }
 
-private fun babyAgeSuffix(profile: com.babycry.analyzer.model.BabyProfile): String {
+private fun babyAgeSuffix(profile: BabyProfile): String {
     val (months, weeks) = profile.ageMonthsWeeks() ?: return ""
     return " · " + formatBabyAge(months, weeks)
 }
@@ -653,7 +659,10 @@ private fun ResultCard(
     feedbackGiven: Boolean,
     feedbackDeferred: Boolean,
     canReplay: Boolean,
+    playback: PlaybackUiState,
     onReplay: () -> Unit,
+    onPauseReplay: () -> Unit,
+    onResumeReplay: () -> Unit,
     onCorrect: () -> Unit,
     onCorrectTo: (CryReason) -> Unit,
     onDefer: () -> Unit,
@@ -705,14 +714,29 @@ private fun ResultCard(
             Text(tr(top.advice), style = MaterialTheme.typography.bodyMedium)
 
             Spacer(Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = onReplay,
-                enabled = canReplay,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                Spacer(Modifier.size(6.dp))
-                Text(tr("Άκου ξανά"), maxLines = 1)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onReplay,
+                    enabled = canReplay,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                    Spacer(Modifier.size(6.dp))
+                    Text(tr("Άκου ξανά"), maxLines = 1)
+                }
+                if (playback.key == "last") {
+                    OutlinedButton(
+                        onClick = if (playback.paused) onResumeReplay else onPauseReplay,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(
+                            if (playback.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                            contentDescription = null,
+                        )
+                        Spacer(Modifier.size(6.dp))
+                        Text(tr(if (playback.paused) "Συνέχεια" else "Παύση"), maxLines = 1)
+                    }
+                }
             }
 
             Spacer(Modifier.height(16.dp))
@@ -814,7 +838,7 @@ private fun FeedbackSection(
 private fun PendingConfirmCard(
     event: CryEvent,
     labels: List<CryReason>,
-    babyName: String,
+    profile: BabyProfile,
     onConfirm: (CryReason) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -827,7 +851,7 @@ private fun PendingConfirmCard(
     ) {
         Column(Modifier.padding(16.dp)) {
             Text(
-                pendingTitle(babyName),
+                pendingTitle(profile),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -866,9 +890,9 @@ private fun PendingConfirmCard(
     }
 }
 
-private fun pendingTitle(babyName: String): String = when (currentAppLang) {
-    AppLang.EN -> if (babyName.isNotBlank()) "Why did $babyName cry?" else "Why did baby cry earlier?"
-    AppLang.EL -> if (babyName.isNotBlank()) "Γιατί έκλαψε ο/η $babyName;" else "Γιατί έκλαψε πριν;"
+private fun pendingTitle(profile: BabyProfile): String = when (currentAppLang) {
+    AppLang.EN -> if (profile.hasName) "Why did ${profile.name} cry?" else "Why did baby cry earlier?"
+    AppLang.EL -> if (profile.hasName) "Γιατί έκλαψε ${profile.displayNameNominative(false)};" else "Γιατί έκλαψε πριν;"
 }
 
 private fun minutesAgoText(ts: Long): String {

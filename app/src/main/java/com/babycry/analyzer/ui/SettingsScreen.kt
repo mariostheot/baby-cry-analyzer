@@ -54,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
+import com.babycry.analyzer.model.BabyGender
 import com.babycry.analyzer.ui.i18n.AppLang
 import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.tr
@@ -80,14 +81,18 @@ fun SettingsScreen(
     val tummyReminderOn by viewModel.tummyReminderEnabled.collectAsState()
     val tummyReminderHourAm by viewModel.tummyReminderHourAm.collectAsState()
     val tummyReminderHourPm by viewModel.tummyReminderHourPm.collectAsState()
+    val lastBackupAt by viewModel.lastBackupAt.collectAsState()
     val focus = LocalFocusManager.current
     val context = LocalContext.current
 
     var dataset by remember { mutableStateOf<Pair<Int, Long>?>(null) }
-    LaunchedEffect(Unit) { dataset = viewModel.datasetInfo() }
+    LaunchedEffect(Unit) {
+        dataset = viewModel.datasetInfo()
+    }
 
     var name by remember(profile) { mutableStateOf(profile.name) }
     var birth by remember(profile) { mutableStateOf(profile.birthMillis) }
+    var gender by remember(profile) { mutableStateOf(profile.gender) }
     var showPicker by remember { mutableStateOf(false) }
     var justSaved by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<Confirm?>(null) }
@@ -200,6 +205,33 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(12.dp))
+                Text(tr("Φύλο"), style = MaterialTheme.typography.bodyLarge)
+                listOf(
+                    BabyGender.UNKNOWN to tr("Δεν έχει οριστεί"),
+                    BabyGender.BOY to tr("Αγόρι"),
+                    BabyGender.GIRL to tr("Κορίτσι"),
+                ).forEach { (value, label) ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                gender = value
+                                justSaved = false
+                            }
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = gender == value,
+                            onClick = {
+                                gender = value
+                                justSaved = false
+                            },
+                        )
+                        Text(label, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -219,7 +251,7 @@ fun SettingsScreen(
                 Button(
                     onClick = {
                         focus.clearFocus()
-                        viewModel.saveProfile(name, birth)
+                        viewModel.saveProfile(name, birth, gender)
                         justSaved = true
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -332,8 +364,9 @@ fun SettingsScreen(
                 ActionRow(
                     Icons.Filled.Backup,
                     tr("Δημιουργία backup"),
-                    tr("Αποθήκευση όλων των δεδομένων σε αρχείο"),
+                    backupHealthText(lastBackupAt, dataset?.first ?: 0),
                     onBackup,
+                )
                 )
                 Divider(Modifier.padding(vertical = 4.dp))
                 ActionRow(
@@ -553,6 +586,22 @@ private fun ToggleRow(
 private fun datasetInfoText(n: Int, bytes: Long): String = when (currentAppLang) {
     AppLang.EN -> "Stored: $n recordings • ${formatBytes(bytes)}"
     AppLang.EL -> "Αποθηκευμένα: $n ηχογραφήσεις • ${formatBytes(bytes)}"
+}
+
+private fun backupHealthText(lastBackupAt: Long, recordings: Int): String {
+    val last = if (lastBackupAt <= 0L) {
+        when (currentAppLang) {
+            AppLang.EN -> "never"
+            AppLang.EL -> "ποτέ"
+        }
+    } else {
+        val fmt = SimpleDateFormat("d/M HH:mm", if (currentAppLang == AppLang.EN) Locale.ENGLISH else Locale("el"))
+        fmt.format(Date(lastBackupAt))
+    }
+    return when (currentAppLang) {
+        AppLang.EN -> "Last backup: $last • includes $recordings recordings"
+        AppLang.EL -> "Τελευταίο backup: $last • περιλαμβάνει $recordings ηχογραφήσεις"
+    }
 }
 
 private fun formatBytes(bytes: Long): String = when {

@@ -15,6 +15,7 @@ import com.babycry.analyzer.data.StatsSummary
 import com.babycry.analyzer.data.TummyTimeEvent
 import com.babycry.analyzer.ml.CryAnalysis
 import com.babycry.analyzer.model.AnalysisEngine
+import com.babycry.analyzer.model.BabyGender
 import com.babycry.analyzer.model.BabyProfile
 import com.babycry.analyzer.model.CryReason
 import com.babycry.analyzer.model.DiaperType
@@ -25,10 +26,12 @@ import com.babycry.analyzer.ui.i18n.AppLang
 import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.trS
 import java.io.OutputStream
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
@@ -56,6 +59,12 @@ data class SoothingUiState(
     val remainingSec: Int = 0,
 )
 
+data class PlaybackUiState(
+    val key: String? = null,
+    val paused: Boolean = false,
+)
+
+@OptIn(ExperimentalCoroutinesApi::class)
 class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = CryRepository.get(app)
@@ -86,6 +95,9 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     private val _soothing = MutableStateFlow(SoothingUiState())
     val soothing: StateFlow<SoothingUiState> = _soothing.asStateFlow()
 
+    private val _playback = MutableStateFlow(PlaybackUiState())
+    val playback: StateFlow<PlaybackUiState> = _playback.asStateFlow()
+
     private val _onboardingComplete = MutableStateFlow(repo.isOnboardingComplete())
     val onboardingComplete: StateFlow<Boolean> = _onboardingComplete.asStateFlow()
 
@@ -96,21 +108,24 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     private val _language = MutableStateFlow(repo.getLanguage())
     val language: StateFlow<AppLang> = _language.asStateFlow()
 
+    private val _lastBackupAt = MutableStateFlow(repo.lastBackupAt())
+    val lastBackupAt: StateFlow<Long> = _lastBackupAt.asStateFlow()
+
     val canReplay: Boolean get() = lastWaveform != null
 
-    val feedbackCount: StateFlow<Int> = repo.feedbackCount()
+    val feedbackCount: StateFlow<Int> = _profile.flatMapLatest { repo.feedbackCount(it.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    val recentEvents: StateFlow<List<CryEvent>> = repo.recentEvents()
+    val recentEvents: StateFlow<List<CryEvent>> = _profile.flatMapLatest { repo.recentEvents(it.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val recentFeedings: StateFlow<List<FeedingEvent>> = repo.recentFeedings()
+    val recentFeedings: StateFlow<List<FeedingEvent>> = _profile.flatMapLatest { repo.recentFeedings(it.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val recentDiapers: StateFlow<List<DiaperEvent>> = repo.recentDiapers()
+    val recentDiapers: StateFlow<List<DiaperEvent>> = _profile.flatMapLatest { repo.recentDiapers(it.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val recentTummy: StateFlow<List<TummyTimeEvent>> = repo.recentTummy()
+    val recentTummy: StateFlow<List<TummyTimeEvent>> = _profile.flatMapLatest { repo.recentTummy(it.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _tummyReminderEnabled = MutableStateFlow(repo.isTummyReminderEnabled())
@@ -124,7 +139,10 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         currentAppLang = repo.getLanguage()
-        viewModelScope.launch { repo.refreshPersonalization() }
+        viewModelScope.launch {
+            refreshProfiles()
+            repo.refreshPersonalization()
+        }
         refreshPending()
     }
 
@@ -156,6 +174,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         cancelRequested = false
         stopSoothing() // don't let the soothing sound bleed into the recording
         player.stop()  // stop any in-progress replay so it doesn't overlap / leak into the mic
+        _playback.value = PlaybackUiState()
         viewModelScope.launch {
             _home.update {
                 HomeUiState(phase = Phase.RECORDING, level = 0f)
@@ -366,7 +385,25 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     /** Play back the clip that was just analyzed. */
     fun playLastRecording() {
         val wave = lastWaveform ?: return
-        viewModelScope.launch { player.play(wave) }
+        playWaveform("last", wave)
+    }
+
+    fun pauseReplay() {
+        player.pause()
+        _playback.update { if (it.key != null) it.copy(paused = true) else it }
+    }
+
+    fun resumeReplay() {
+        player.resume()
+        _playback.update { if (it.key != null) it.copy(paused = false) else it }
+    }
+
+    private fun playWaveform(key: String, wave: FloatArray) {
+        viewModelScope.launch {
+            _playback.value = PlaybackUiState(key = key, paused = false)
+            player.play(wave)
+            _playback.update { if (it.key == key) PlaybackUiState() else it }
+        }
     }
 
     // ---- Saved recordings library --------------------------------------------
@@ -378,7 +415,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     fun playStoredClip(eventId: Long) {
         viewModelScope.launch {
             val wave = repo.readClipSamples(eventId) ?: return@launch
-            player.play(wave)
+            playWaveform("event:$eventId", wave)
         }
     }
 
@@ -386,10 +423,10 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     fun shareSummary(): String? {
         val analysis = _home.value.analysis ?: return null
         val r = analysis.result
-        if (!r.cryDetected) return trS("«Γιατί Κλαίει;»: δεν ανιχνεύτηκε καθαρό κλάμα.")
+        if (!r.cryDetected) return trS("«Revekka»: δεν ανιχνεύτηκε καθαρό κλάμα.")
         val top = r.topReason ?: return null
         val sb = StringBuilder()
-        sb.append(trS("«Γιατί Κλαίει;» — αποτέλεσμα")).append("\n")
+        sb.append(trS("«Revekka» — αποτέλεσμα")).append("\n")
         sb.append("${top.emoji} ${trS(top.displayName)} (${(r.confidence * 100).roundToInt()}%)\n\n")
         sb.append(trS("Πιθανές αιτίες:")).append("\n")
         r.scores.take(3).forEach {
@@ -404,6 +441,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     /** Start a soothing sound; [minutes] == 0 means play until stopped. */
     fun playSoothing(type: SoundType, minutes: Int) {
         player.stop() // don't overlap a cry replay with the soothing sound
+        _playback.value = PlaybackUiState()
         soothingJob?.cancel()
         soother.start(type)
         _soothing.value = SoothingUiState(playing = type, remainingSec = minutes * 60)
@@ -429,7 +467,8 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Baby profiles (multi-baby) ------------------------------------------
 
-    private fun refreshProfiles() {
+    private suspend fun refreshProfiles() {
+        repo.assignLegacyDataToActiveProfile()
         _profiles.value = repo.getProfiles()
         _profile.value = repo.getProfile()
     }
@@ -447,6 +486,10 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.setActiveProfile(id)
             refreshProfiles()
+            repo.refreshPersonalization()
+            refreshPending()
+            scheduleFeedReminder()
+            scheduleTummyReminder()
         }
     }
 
@@ -457,18 +500,23 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun saveProfile(name: String, birthMillis: Long?) {
+    fun saveProfile(name: String, birthMillis: Long?, gender: BabyGender) {
         viewModelScope.launch {
-            repo.updateActiveProfile(name.trim(), birthMillis)
+            repo.updateActiveProfile(name.trim(), birthMillis, gender)
             refreshProfiles()
             _home.update { it.copy(message = trS("Το προφίλ αποθηκεύτηκε.")) }
         }
     }
 
     /** First-run: save the baby profile and never show the welcome screen again. */
-    fun completeOnboarding(name: String, birthMillis: Long?, colicConfirmed: Boolean = false) {
+    fun completeOnboarding(
+        name: String,
+        birthMillis: Long?,
+        colicConfirmed: Boolean = false,
+        gender: BabyGender = BabyGender.UNKNOWN,
+    ) {
         viewModelScope.launch {
-            repo.addProfile(name.trim(), birthMillis, colicConfirmed)
+            repo.addProfile(name.trim(), birthMillis, colicConfirmed, gender)
             repo.setOnboardingComplete()
             refreshProfiles()
             _onboardingComplete.value = true
@@ -501,6 +549,11 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun exportReportHtml(): String = repo.exportReportHtml()
 
     suspend fun exportBackupJson(): String = repo.exportBackupJson()
+
+    fun markBackupCreated() {
+        repo.markBackupCreated()
+        _lastBackupAt.value = repo.lastBackupAt()
+    }
 
     fun importBackup(json: String) {
         viewModelScope.launch {
@@ -557,6 +610,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         recorder.stop()
         player.stop()
+        _playback.value = PlaybackUiState()
         soother.stop()
         super.onCleared()
     }

@@ -94,7 +94,10 @@ object ConfirmReminder {
         ensureChannel(context)
 
         val profile = repo.getProfile()
-        val name = if (profile.hasName) profile.name else trS("το μωρό")
+        val name = when (currentAppLang) {
+            AppLang.EN -> if (profile.hasName) profile.name else "baby"
+            AppLang.EL -> profile.displayNameNominative(langIsEnglish = false)
+        }
         val predicted = repo.labels.getOrNull(pending.predictedIndex)
         val text = predicted?.let { notificationBody(trS(it.displayName)) }
             ?: trS("Πάτησε για να επιβεβαιώσεις γιατί έκλαψε.")

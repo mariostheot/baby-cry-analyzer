@@ -46,8 +46,9 @@ fun ReportScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     var html by remember { mutableStateOf<String?>(null) }
     var webRef by remember { mutableStateOf<WebView?>(null) }
     val language by viewModel.language.collectAsState()
+    val profile by viewModel.profile.collectAsState()
 
-    LaunchedEffect(language) { html = viewModel.exportReportHtml() }
+    LaunchedEffect(language, profile.id) { html = viewModel.exportReportHtml() }
 
     Column(modifier.fillMaxSize()) {
         val h = html
@@ -87,8 +88,8 @@ private fun printReport(context: Context, web: WebView) {
     val adapter = web.createPrintDocumentAdapter("baby-cry-report")
     printManager.print(
         when (currentAppLang) {
-            AppLang.EN -> "Why is Baby Crying? — Report"
-            AppLang.EL -> "Γιατί Κλαίει; — Αναφορά"
+            AppLang.EN -> "Revekka — Report"
+            AppLang.EL -> "Revekka — Αναφορά"
         },
         adapter,
         PrintAttributes.Builder().build(),

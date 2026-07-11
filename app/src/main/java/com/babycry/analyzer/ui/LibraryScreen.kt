@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilledTonalIconButton
@@ -49,6 +50,7 @@ fun LibraryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val labels = viewModel.labels
     val recents by viewModel.recentEvents.collectAsState()
     val language by viewModel.language.collectAsState()
+    val playback by viewModel.playback.collectAsState()
     var clips by remember { mutableStateOf<List<CryEvent>>(emptyList()) }
     // Reload whenever events change (new confirmation, deletion) or the language flips.
     LaunchedEffect(recents, language) { clips = viewModel.libraryEvents() }
@@ -94,6 +96,10 @@ fun LibraryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                     labels = labels,
                     time = fmt.format(Date(e.timestamp)),
                     onPlay = { viewModel.playStoredClip(e.id) },
+                    isPlaying = playback.key == "event:${e.id}" && !playback.paused,
+                    isPaused = playback.key == "event:${e.id}" && playback.paused,
+                    onPause = { viewModel.pauseReplay() },
+                    onResume = { viewModel.resumeReplay() },
                 )
             }
         }
@@ -108,6 +114,10 @@ private fun LibraryRow(
     labels: List<CryReason>,
     time: String,
     onPlay: () -> Unit,
+    isPlaying: Boolean,
+    isPaused: Boolean,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
 ) {
     val reason = event.confirmedIndex?.takeIf { it in labels.indices }?.let { labels[it] }
     Card(Modifier.fillMaxWidth()) {
@@ -133,6 +143,14 @@ private fun LibraryRow(
             }
             FilledTonalIconButton(onClick = onPlay) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = tr("Άκου ξανά"))
+            }
+            if (isPlaying || isPaused) {
+                FilledTonalIconButton(onClick = if (isPaused) onResume else onPause) {
+                    Icon(
+                        if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                        contentDescription = tr(if (isPaused) "Συνέχεια" else "Παύση"),
+                    )
+                }
             }
         }
     }

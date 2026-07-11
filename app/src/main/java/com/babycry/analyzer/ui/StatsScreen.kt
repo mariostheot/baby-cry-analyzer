@@ -30,15 +30,31 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.babycry.analyzer.data.StatsSummary
+import com.babycry.analyzer.data.CryEvent
+import com.babycry.analyzer.data.DiaperEvent
+import com.babycry.analyzer.data.FeedingEvent
+import com.babycry.analyzer.data.TummyTimeEvent
+import com.babycry.analyzer.model.DiaperType
+import com.babycry.analyzer.ui.i18n.AppLang
+import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.tr
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import kotlin.math.roundToInt
 
 @Composable
 fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     var stats by remember { mutableStateOf<StatsSummary?>(null) }
     val language by viewModel.language.collectAsState()
+    val profile by viewModel.profile.collectAsState()
+    val events by viewModel.recentEvents.collectAsState()
+    val feedings by viewModel.recentFeedings.collectAsState()
+    val diapers by viewModel.recentDiapers.collectAsState()
+    val tummy by viewModel.recentTummy.collectAsState()
 
-    LaunchedEffect(language) { stats = viewModel.loadStats() }
+    LaunchedEffect(language, profile.id) { stats = viewModel.loadStats() }
 
     Column(
         modifier = modifier
@@ -94,6 +110,17 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                     "• «Προσαρμογή στο μωρό σου»: όταν μαζευτούν αρκετές διορθώσεις, το μοντέλο προσαρμόζεται ειδικά στο δικό σου μωρό.",
             ),
         )
+
+        Spacer(Modifier.height(18.dp))
+        BabyDayTimelineCard(
+            cries = events.filter { it.cryDetected },
+            feedings = feedings,
+            diapers = diapers,
+            tummy = tummy,
+        )
+
+        Spacer(Modifier.height(18.dp))
+        PatternAlertsCard(cries = events.filter { it.cryDetected })
 
         Spacer(Modifier.height(18.dp))
         SectionHeader(
@@ -162,6 +189,78 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun BabyDayTimelineCard(
+    cries: List<CryEvent>,
+    feedings: List<FeedingEvent>,
+    diapers: List<DiaperEvent>,
+    tummy: List<TummyTimeEvent>,
+) {
+    SectionHeader(
+        tr("Ημέρα του μωρού"),
+        tr("Μια γρήγορη γραμμή με τα σημερινά κλάματα, ταΐσματα, πάνες και tummy time."),
+    )
+    Spacer(Modifier.height(8.dp))
+    val todayStart = startOfToday()
+    val items = buildList {
+        cries.filter { it.timestamp >= todayStart }.forEach { add(TimelineDot(it.timestamp, "😢", tr("Κλάμα"))) }
+        feedings.filter { it.timestamp >= todayStart }.forEach { add(TimelineDot(it.timestamp, "🍼", tr("Τάισμα"))) }
+        diapers.filter { it.timestamp >= todayStart }.forEach {
+            val type = DiaperType.fromNameOrNull(it.type) ?: DiaperType.WET
+            add(TimelineDot(it.timestamp, type.emoji, tr("Πάνα")))
+        }
+        tummy.filter { it.timestamp >= todayStart }.forEach { add(TimelineDot(it.timestamp, "🤸", "Tummy Time")) }
+    }.sortedBy { it.timestamp }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            if (items.isEmpty()) {
+                Caption(tr("Δεν υπάρχουν ακόμη σημερινές καταγραφές."))
+            } else {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    items.takeLast(10).forEach { dot ->
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                            Text(dot.emoji, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                hourMinute(dot.timestamp),
+                                style = MaterialTheme.typography.labelSmall,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Caption(tr("Δείχνει τις τελευταίες σημερινές καταγραφές με σειρά ώρας."))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PatternAlertsCard(cries: List<CryEvent>) {
+    SectionHeader(
+        tr("Έξυπνες παρατηρήσεις"),
+        tr("Μικρά μοτίβα που ξεχωρίζουν από τις τελευταίες μέρες."),
+    )
+    Spacer(Modifier.height(8.dp))
+    val alerts = remember(cries, currentAppLang) { cryPatternAlerts(cries) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            if (alerts.isEmpty()) {
+                Caption(tr("Δεν υπάρχει ακόμη αρκετό μοτίβο. Με λίγες ακόμη μέρες χρήσης θα εμφανίζονται παρατηρήσεις εδώ."))
+            } else {
+                alerts.forEachIndexed { i, alert ->
+                    Text("• $alert", style = MaterialTheme.typography.bodyMedium)
+                    if (i < alerts.lastIndex) Spacer(Modifier.height(6.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SectionHeader(title: String, subtitle: String) {
     Text(title, style = MaterialTheme.typography.titleLarge)
     Spacer(Modifier.height(2.dp))
@@ -169,6 +268,54 @@ private fun SectionHeader(title: String, subtitle: String) {
         subtitle,
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+    )
+}
+
+private data class TimelineDot(val timestamp: Long, val emoji: String, val label: String)
+
+private fun startOfToday(): Long = Calendar.getInstance().apply {
+    set(Calendar.HOUR_OF_DAY, 0)
+    set(Calendar.MINUTE, 0)
+    set(Calendar.SECOND, 0)
+    set(Calendar.MILLISECOND, 0)
+}.timeInMillis
+
+private fun hourMinute(ts: Long): String = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ts))
+
+private fun cryPatternAlerts(cries: List<CryEvent>): List<String> {
+    if (cries.size < 6) return emptyList()
+    val now = System.currentTimeMillis()
+    val day = 86_400_000L
+    val recentStart = now - 3 * day
+    val previousStart = now - 6 * day
+    val recent = cries.filter { it.timestamp >= recentStart }
+    val previous = cries.filter { it.timestamp in previousStart until recentStart }
+    if (recent.size < 3) return emptyList()
+
+    val recentByWindow = IntArray(8)
+    val previousByWindow = IntArray(8)
+    val cal = Calendar.getInstance()
+    fun addToBucket(e: CryEvent, arr: IntArray) {
+        cal.timeInMillis = e.timestamp
+        val bucket = (cal.get(Calendar.HOUR_OF_DAY) / 3).coerceIn(0, 7)
+        arr[bucket]++
+    }
+    recent.forEach { addToBucket(it, recentByWindow) }
+    previous.forEach { addToBucket(it, previousByWindow) }
+
+    val peak = recentByWindow.indices.maxByOrNull { recentByWindow[it] } ?: return emptyList()
+    val peakCount = recentByWindow[peak]
+    val prevCount = previousByWindow[peak]
+    if (peakCount < 2 || peakCount <= prevCount) return emptyList()
+
+    val from = peak * 3
+    val to = (from + 3).coerceAtMost(24)
+    val window = "%02d:00–%02d:00".format(from, to)
+    return listOf(
+        when (currentAppLang) {
+            AppLang.EN -> "In the last 3 days, cries are clustering around $window ($peakCount times)."
+            AppLang.EL -> "Τις τελευταίες 3 μέρες υπάρχουν περισσότερα κλάματα περίπου $window ($peakCount φορές)."
+        },
     )
 }
 

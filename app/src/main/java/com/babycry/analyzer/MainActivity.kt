@@ -178,6 +178,7 @@ private fun AppRootContent(
                         it.write(json.toByteArray())
                     }
                 }
+                viewModel.markBackupCreated()
                 snackbarHostState.showSnackbar(trS("Το backup αποθηκεύτηκε."))
             }
         }
@@ -272,7 +273,7 @@ private fun AppRootContent(
 
     if (!onboardingDone) {
         OnboardingScreen(
-            onFinish = { name, birth, colic -> viewModel.completeOnboarding(name, birth, colic) },
+            onFinish = { name, birth, colic, gender -> viewModel.completeOnboarding(name, birth, colic, gender) },
             onSkip = { viewModel.skipOnboarding() },
         )
         return
@@ -282,7 +283,7 @@ private fun AppRootContent(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(overlay?.let { tr(it.title) } ?: tr("Γιατί Κλαίει;")) },
+                title = { Text(overlay?.let { tr(it.title) } ?: tr("Revekka")) },
                 navigationIcon = {
                     if (overlay != null) {
                         IconButton(onClick = { closeOverlay() }) {

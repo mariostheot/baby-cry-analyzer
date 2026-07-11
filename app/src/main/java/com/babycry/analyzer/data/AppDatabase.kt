@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DiaperEvent::class,
         TummyTimeEvent::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -64,13 +64,26 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // v4 -> v5: make all parent-entered records belong to a specific baby profile.
+        // Existing rows start as legacy ("") and the repository assigns them to the active baby
+        // on first launch after upgrade, because the active profile lives in SharedPreferences.
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE cry_events ADD COLUMN profileId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE feedback_examples ADD COLUMN profileId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE feeding_events ADD COLUMN profileId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE diaper_events ADD COLUMN profileId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tummy_events ADD COLUMN profileId TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "babycry.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
                     .also { instance = it }
             }
     }

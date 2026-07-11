@@ -101,7 +101,10 @@ object FeedReminder {
         ensureChannel(context)
 
         val profile = repo.getProfile()
-        val name = if (profile.hasName) profile.name else trS("το μωρό")
+        val name = when (currentAppLang) {
+            AppLang.EN -> if (profile.hasName) profile.name else "baby"
+            AppLang.EL -> profile.displayNameNominative(langIsEnglish = false)
+        }
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -135,7 +138,7 @@ object FeedReminder {
 
     private fun feedBody(name: String): String = when (currentAppLang) {
         AppLang.EN -> "In about $LEAD_MINUTES minutes $name may get hungry. If a cry comes around now, hunger is the most likely reason."
-        AppLang.EL -> "Σε περίπου $LEAD_MINUTES λεπτά μπορεί να πεινάσει ο/η $name. Αν κλάψει τώρα, πιο πιθανή αιτία είναι η πείνα."
+        AppLang.EL -> "Σε περίπου $LEAD_MINUTES λεπτά μπορεί να πεινάσει $name. Αν κλάψει τώρα, πιο πιθανή αιτία είναι η πείνα."
     }
 }
 

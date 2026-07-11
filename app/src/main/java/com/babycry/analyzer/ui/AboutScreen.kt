@@ -55,7 +55,7 @@ fun AboutScreen(modifier: Modifier = Modifier) {
         Text("👶🔊", style = MaterialTheme.typography.displaySmall)
         Spacer(Modifier.height(8.dp))
         Text(
-            tr("Γιατί Κλαίει;"),
+            tr("Revekka"),
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center,
         )

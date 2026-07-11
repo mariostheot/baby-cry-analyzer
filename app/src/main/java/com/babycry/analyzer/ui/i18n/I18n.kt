@@ -33,7 +33,7 @@ private val EN: Map<String, String> = mapOf(
     "Αναφορά" to "Report",
     "Ηρέμησε το μωρό" to "Soothe the baby",
     "Πότε να ανησυχήσεις" to "When to worry",
-    "Γιατί Κλαίει;" to "Why is Baby Crying?",
+    "Revekka" to "Revekka",
     "Πίσω" to "Back",
     "Μενού" to "Menu",
     "Χρειάζεται άδεια μικροφώνου για την ηχογράφηση." to "Microphone permission is required for recording.",
@@ -99,6 +99,8 @@ private val EN: Map<String, String> = mapOf(
     "Πρόχειρη εκτίμηση - δεν υπάρχει εκπαιδευμένο μοντέλο." to "Rough estimate — no trained model available.",
     "Δεν είμαι σίγουρο - δες και τις άλλες πιθανές αιτίες." to "Not sure — check the other possible causes too.",
     "Άκου ξανά" to "Listen again",
+    "Παύση" to "Pause",
+    "Συνέχεια" to "Resume",
     "Κοινοποίηση" to "Share",
     "Πιθανές αιτίες" to "Possible causes",
     "Ευχαριστώ! Θα μάθω από αυτό." to "Thanks! I'll learn from this.",
@@ -196,6 +198,18 @@ private val EN: Map<String, String> = mapOf(
     "Θα εμφανιστεί μόλις αρχίσεις να δίνεις διορθώσεις." to "Will appear once you start giving corrections.",
     "Διαχείριση/μηδενισμός δεδομένων: στις Ρυθμίσεις (μενού ⋮ πάνω δεξιά)." to
         "Manage/reset data: in Settings (⋮ menu top right).",
+    "Ημέρα του μωρού" to "Baby's day",
+    "Μια γρήγορη γραμμή με τα σημερινά κλάματα, ταΐσματα, πάνες και tummy time." to
+        "A quick line with today's cries, feedings, diapers and tummy time.",
+    "Κλάμα" to "Cry",
+    "Δεν υπάρχουν ακόμη σημερινές καταγραφές." to "No records for today yet.",
+    "Δείχνει τις τελευταίες σημερινές καταγραφές με σειρά ώρας." to
+        "Shows today's latest records in time order.",
+    "Έξυπνες παρατηρήσεις" to "Smart insights",
+    "Μικρά μοτίβα που ξεχωρίζουν από τις τελευταίες μέρες." to
+        "Small patterns that stand out from the last few days.",
+    "Δεν υπάρχει ακόμη αρκετό μοτίβο. Με λίγες ακόμη μέρες χρήσης θα εμφανίζονται παρατηρήσεις εδώ." to
+        "No clear pattern yet. With a few more days of use, insights will appear here.",
 
     // ---- Settings screen ----
     "Μωρά" to "Babies",
@@ -206,6 +220,9 @@ private val EN: Map<String, String> = mapOf(
     "Προσθήκη μωρού" to "Add baby",
     "Στοιχεία ενεργού μωρού" to "Active baby details",
     "Όνομα" to "Name",
+    "Φύλο" to "Sex",
+    "Αγόρι" to "Boy",
+    "Κορίτσι" to "Girl",
     "Ημ. γέννησης" to "Birth date",
     "Δεν έχει οριστεί" to "Not set",
     "Επιλογή" to "Choose",
@@ -347,8 +364,8 @@ private val EN: Map<String, String> = mapOf(
     "Η προσωποποίηση μηδενίστηκε." to "Personalization reset.",
     "άκυρο αρχείο" to "invalid file",
     "Σφάλμα επαναφοράς:" to "Restore error:",
-    "«Γιατί Κλαίει;»: δεν ανιχνεύτηκε καθαρό κλάμα." to "\"Why is Baby Crying?\": no clear cry detected.",
-    "«Γιατί Κλαίει;» — αποτέλεσμα" to "\"Why is Baby Crying?\" — result",
+    "«Revekka»: δεν ανιχνεύτηκε καθαρό κλάμα." to "\"Revekka\": no clear cry detected.",
+    "«Revekka» — αποτέλεσμα" to "\"Revekka\" — result",
     "Πιθανές αιτίες:" to "Possible causes:",
     "Υπενθυμίσεις επιβεβαίωσης" to "Confirmation reminders",
     "Σε ρωτά λίγο μετά το κλάμα ποια ήταν τελικά η αιτία." to "Asks you shortly after a cry what the cause actually was.",
@@ -366,8 +383,19 @@ private val EN: Map<String, String> = mapOf(
     "Ανατροφοδότηση" to "Feedback",
     "✓ σωστό" to "✓ correct",
     "Δημιουργήθηκε" to "Generated",
-    "«Γιατί Κλαίει;» — Δημιουργήθηκε από τον Μάριο Θεοτή. Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή." to
-        "\"Why is Baby Crying?\" — Created by Mario Theotis. Informational aid, not medical advice.",
+    "Σύνοψη για παιδίατρο" to "Doctor visit summary",
+    "Σύντομη εικόνα για επίσκεψη: κλάματα, ταΐσματα, πάνες και tummy time από τα πρόσφατα δεδομένα." to
+        "A compact visit overview: cries, feedings, diapers and tummy time from recent data.",
+    "Κλάματα τελευταίου 24ώρου" to "Cries in last 24h",
+    "Κλάματα τελευταίων 7 ημερών" to "Cries in last 7 days",
+    "Ταΐσματα τελευταίου 24ώρου" to "Feedings in last 24h",
+    "Πάνες τελευταίου 24ώρου" to "Diapers in last 24h",
+    "κακά" to "poop",
+    "Tummy time τελευταίου 24ώρου" to "Tummy time in last 24h",
+    "Αν υπάρχουν κόκκινες σημαίες (πυρετός, δυσκολία στην αναπνοή, αφυδάτωση, ασυνήθιστο/επίμονο κλάμα), επικοινώνησε άμεσα με γιατρό." to
+        "If there are red flags (fever, breathing difficulty, dehydration, unusual/persistent crying), contact a doctor promptly.",
+    "«Revekka» — Δημιουργήθηκε από τον Μάριο Θεοτή. Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή." to
+        "\"Revekka\" — Created by Mario Theotis. Informational aid, not medical advice.",
 
     // ---- Feedback (result card) ----
     "Ήταν σωστή η εκτίμηση;" to "Was the estimate correct?",

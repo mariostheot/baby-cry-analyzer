@@ -12,6 +12,7 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "cry_events")
 data class CryEvent(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(defaultValue = "") val profileId: String = "",
     val timestamp: Long,
     val cryDetected: Boolean,
     val predictedIndex: Int,          // canonical class index, or -1 if no cry
@@ -32,6 +33,7 @@ data class CryEvent(
 @Entity(tableName = "feedback_examples")
 data class FeedbackExample(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(defaultValue = "") val profileId: String = "",
     val timestamp: Long,
     val labelIndex: Int,
     val embedding: FloatArray,
@@ -48,6 +50,7 @@ data class FeedbackExample(
 @Entity(tableName = "feeding_events")
 data class FeedingEvent(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(defaultValue = "") val profileId: String = "",
     val timestamp: Long,
     val note: String? = null,
 )
@@ -59,6 +62,7 @@ data class FeedingEvent(
 @Entity(tableName = "diaper_events")
 data class DiaperEvent(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(defaultValue = "") val profileId: String = "",
     val timestamp: Long,
     val type: String,
 )
@@ -70,5 +74,6 @@ data class DiaperEvent(
 @Entity(tableName = "tummy_events")
 data class TummyTimeEvent(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(defaultValue = "") val profileId: String = "",
     val timestamp: Long,
 )

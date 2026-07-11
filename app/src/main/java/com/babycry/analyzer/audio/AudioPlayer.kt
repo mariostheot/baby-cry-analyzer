@@ -86,4 +86,12 @@ class AudioPlayer(private val sampleRate: Int = MfccExtractor.SAMPLE_RATE) {
             runCatching { it.release() }
         }
     }
+
+    fun pause() {
+        track?.let { runCatching { it.pause() } }
+    }
+
+    fun resume() {
+        track?.let { runCatching { it.play() } }
+    }
 }

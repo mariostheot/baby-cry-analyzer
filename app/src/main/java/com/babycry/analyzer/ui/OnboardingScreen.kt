@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -35,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.babycry.analyzer.model.BabyGender
 import com.babycry.analyzer.ui.i18n.AppLang
 import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.tr
@@ -45,12 +47,13 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OnboardingScreen(
-    onFinish: (name: String, birthMillis: Long?, colicConfirmed: Boolean) -> Unit,
+    onFinish: (name: String, birthMillis: Long?, colicConfirmed: Boolean, gender: BabyGender) -> Unit,
     onSkip: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var name by remember { mutableStateOf("") }
     var birth by remember { mutableStateOf<Long?>(null) }
+    var gender by remember { mutableStateOf(BabyGender.UNKNOWN) }
     var colic by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
     val dateFmt = remember(currentAppLang) {
@@ -128,6 +131,16 @@ fun OnboardingScreen(
             OutlinedButton(onClick = { showPicker = true }) { Text(tr("Επιλογή")) }
         }
 
+        Spacer(Modifier.height(16.dp))
+        Column(Modifier.fillMaxWidth()) {
+            Text(
+                tr("Φύλο"),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            GenderOptions(selected = gender, onSelect = { gender = it })
+        }
+
         Spacer(Modifier.height(20.dp))
         Row(
             Modifier.fillMaxWidth(),
@@ -152,7 +165,7 @@ fun OnboardingScreen(
 
         Spacer(Modifier.height(32.dp))
         Button(
-            onClick = { onFinish(name, birth, colic) },
+            onClick = { onFinish(name, birth, colic, gender) },
             modifier = Modifier.fillMaxWidth(),
         ) { Text(tr("Ξεκίνα")) }
 
@@ -187,6 +200,23 @@ fun OnboardingScreen(
             },
         ) {
             DatePicker(state = state)
+        }
+    }
+}
+
+@Composable
+private fun GenderOptions(selected: BabyGender, onSelect: (BabyGender) -> Unit) {
+    listOf(
+        BabyGender.UNKNOWN to tr("Δεν έχει οριστεί"),
+        BabyGender.BOY to tr("Αγόρι"),
+        BabyGender.GIRL to tr("Κορίτσι"),
+    ).forEach { (value, label) ->
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RadioButton(selected = selected == value, onClick = { onSelect(value) })
+            Text(label, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
