@@ -47,6 +47,10 @@ interface FeedbackDao {
     @Query("SELECT COUNT(*) FROM feedback_examples")
     suspend fun countNow(): Int
 
+    /** Remove any example(s) that came from a given cry, so a correction can replace them. */
+    @Query("DELETE FROM feedback_examples WHERE sourceEventId = :eventId")
+    suspend fun deleteByEvent(eventId: Long)
+
     @Query("DELETE FROM feedback_examples")
     suspend fun clear()
 }

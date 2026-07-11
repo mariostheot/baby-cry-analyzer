@@ -1,7 +1,6 @@
 package com.babycry.analyzer
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -18,6 +17,7 @@ import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Insights
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -53,6 +53,7 @@ import com.babycry.analyzer.ui.AboutScreen
 import com.babycry.analyzer.ui.CryViewModel
 import com.babycry.analyzer.ui.HistoryScreen
 import com.babycry.analyzer.ui.HomeScreen
+import com.babycry.analyzer.ui.LibraryScreen
 import com.babycry.analyzer.ui.OnboardingScreen
 import com.babycry.analyzer.ui.ReportScreen
 import com.babycry.analyzer.ui.SafetyScreen
@@ -61,6 +62,7 @@ import com.babycry.analyzer.ui.SootheScreen
 import com.babycry.analyzer.ui.StatsScreen
 import com.babycry.analyzer.ui.theme.BabyCryTheme
 import com.babycry.analyzer.notify.ConfirmReminder
+import com.babycry.analyzer.notify.FeedReminder
 import com.babycry.analyzer.ui.i18n.LocalAppLang
 import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.AppLang
@@ -94,6 +96,7 @@ private enum class Overlay(val title: String) {
     REPORT("Αναφορά"),
     SOOTHE("Ηρέμησε το μωρό"),
     SAFETY("Πότε να ανησυχήσεις"),
+    LIBRARY("Αποθηκευμένα κλάματα"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -188,6 +191,7 @@ private fun AppRootContent(viewModel: CryViewModel) {
     LaunchedEffect(onboardingDone) {
         if (!onboardingDone) return@LaunchedEffect
         ConfirmReminder.ensureChannel(context)
+        FeedReminder.ensureChannel(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -195,6 +199,7 @@ private fun AppRootContent(viewModel: CryViewModel) {
             notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         viewModel.refreshPending()
+        viewModel.scheduleFeedReminder()
     }
 
     val onListen: () -> Unit = {
@@ -203,19 +208,6 @@ private fun AppRootContent(viewModel: CryViewModel) {
         ) == PackageManager.PERMISSION_GRANTED
         if (granted) viewModel.onListenTapped()
         else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-    }
-
-    val onShareResult: () -> Unit = {
-        val text = viewModel.shareSummary()
-        if (text != null) {
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, text)
-            }
-            context.startActivity(Intent.createChooser(intent, trS("Κοινοποίηση αποτελέσματος")))
-        } else {
-            scope.launch { snackbarHostState.showSnackbar(trS("Δεν υπάρχει αποτέλεσμα για κοινοποίηση.")) }
-        }
     }
 
     LaunchedEffect(home.message) {
@@ -264,6 +256,11 @@ private fun AppRootContent(viewModel: CryViewModel) {
                                 onClick = { menuOpen = false; overlay = Overlay.SAFETY },
                             )
                             DropdownMenuItem(
+                                text = { Text(tr("Αποθηκευμένα κλάματα")) },
+                                leadingIcon = { Icon(Icons.Filled.LibraryMusic, contentDescription = null) },
+                                onClick = { menuOpen = false; overlay = Overlay.LIBRARY },
+                            )
+                            DropdownMenuItem(
                                 text = { Text(tr("Ρυθμίσεις")) },
                                 leadingIcon = { Icon(Icons.Filled.Settings, contentDescription = null) },
                                 onClick = { menuOpen = false; overlay = Overlay.SETTINGS },
@@ -304,10 +301,10 @@ private fun AppRootContent(viewModel: CryViewModel) {
                 overlay == Overlay.REPORT -> ReportScreen(viewModel)
                 overlay == Overlay.SOOTHE -> SootheScreen(viewModel)
                 overlay == Overlay.SAFETY -> SafetyScreen()
+                overlay == Overlay.LIBRARY -> LibraryScreen(viewModel)
                 tab == Tab.HOME -> HomeScreen(
                     viewModel = viewModel,
                     onListen = onListen,
-                    onShare = onShareResult,
                     onCancel = { viewModel.cancelListening() },
                     onSoothe = { overlay = Overlay.SOOTHE },
                     onSafety = { overlay = Overlay.SAFETY },

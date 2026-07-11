@@ -110,6 +110,10 @@ class PersonalizationEngine(
         if (examples.size < MIN_TIER2_EXAMPLES) return false
         if (distinctClasses(examples) < 2) return false
 
+        // Retrain from the shipped head every time, so a corrected/relabelled example leaves no
+        // residual imprint - the fine-tuned head always reflects the CURRENT set of corrections.
+        baseWeights?.let { t.setWeights(it) }
+
         val xs = examples.map { it.embedding }.toTypedArray()
         val ys = IntArray(examples.size) { examples[it].labelIndex }
 

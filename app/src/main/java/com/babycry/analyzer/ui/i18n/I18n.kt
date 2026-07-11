@@ -247,7 +247,7 @@ private val EN: Map<String, String> = mapOf(
     // ---- Safety screen ----
     "Η εφαρμογή είναι ένα βοηθητικό εργαλείο, ΟΧΙ ιατρική διάγνωση. Αν κάτι σε ανησυχεί, εμπιστέψου το ένστικτό σου και επικοινώνησε με τον παιδίατρό σου." to
         "This app is a helper tool, NOT a medical diagnosis. If something worries you, trust your instincts and contact your pediatrician.",
-    "Ζήτησε άμεσα βοήθεια (παιδίατρος / ΕΚΑΒ 166) αν:" to "Seek immediate help (pediatrician / emergency 166) if:",
+    "Ζήτησε άμεσα βοήθεια αν:" to "Seek immediate help if:",
     "Δυσκολία στην αναπνοή, πολύ γρήγορη/θορυβώδης αναπνοή, ή μπλε/μωβ χείλη & πρόσωπο." to
         "Difficulty breathing, very fast/noisy breathing, or blue/purple lips & face.",
     "Πυρετός σε μωρό κάτω των 3 μηνών (≥38°C), ή επίμονος/πολύ υψηλός πυρετός." to
@@ -337,4 +337,39 @@ private val EN: Map<String, String> = mapOf(
     "Δημιουργήθηκε" to "Generated",
     "«Γιατί Κλαίει;» — Δημιουργήθηκε από τον Μάριο Θεοτή. Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή." to
         "\"Why is Baby Crying?\" — Created by Mario Theotis. Informational aid, not medical advice.",
+
+    // ---- Feedback (result card) ----
+    "Ναι, σωστή" to "Yes, correct",
+    "Δεν ξέρω ακόμα" to "Don't know yet",
+    "Κανένα πρόβλημα — θα σε ρωτήσουμε ξανά σε λίγα λεπτά, μόλις καταλάβεις." to
+        "No problem — we'll ask again in a few minutes, once you figure it out.",
+    "Αν δεν ξέρεις ακόμα, θα σε ρωτήσουμε σε λίγα λεπτά μόλις καταλάβεις (π.χ. αφού το ταΐσεις κι ηρεμήσει). Μπορείς να το αλλάξεις και αργότερα από το Ιστορικό." to
+        "If you don't know yet, we'll ask in a few minutes once you figure it out (e.g. after feeding and calming). You can also change it later from History.",
+
+    // ---- History: hour-of-day heatmap ----
+    "Κλάμα ανά ώρα της ημέρας" to "Cries by hour of day",
+    "Πιο σκούρο = περισσότερα κλάματα εκείνη την ώρα. Δείχνει τις «δύσκολες» ώρες (συχνά αργά το απόγευμα/βράδυ)." to
+        "Darker = more cries in that hour. Shows the \"hard\" hours (often late afternoon/evening).",
+    "Ώρα αιχμής:" to "Peak hour:",
+
+    // ---- Saved recordings library ----
+    "Αποθηκευμένα κλάματα" to "Saved cries",
+    "Οι επιβεβαιωμένες ηχογραφήσεις με την αιτία τους. Πάτησε ▶ για να τις ακούσεις ξανά." to
+        "Your confirmed recordings with their cause. Tap ▶ to play them again.",
+    "Δεν υπάρχουν ακόμη αποθηκευμένες ηχογραφήσεις. Μόλις επιβεβαιώσεις γιατί έκλαψε το μωρό, η ηχογράφηση αποθηκεύεται εδώ (εφόσον είναι ενεργή η «Αποθήκευση ηχογραφήσεων» στις Ρυθμίσεις)." to
+        "No saved recordings yet. Once you confirm why baby cried, the recording is saved here (as long as \"Save recordings\" is on in Settings).",
+
+    // ---- Feeding reminder (notification channel) ----
+    "Υπενθυμίσεις ταΐσματος" to "Feeding reminders",
+    "Σε ειδοποιεί λίγο πριν την ώρα που συνήθως πεινά το μωρό." to
+        "Notifies you shortly before your baby's usual feeding time.",
+
+    // ---- Report: long-term overview ----
+    "Συνολική εικόνα" to "Overview",
+    "Ημέρες καταγραφής" to "Days tracked",
+    "Μέσος όρος κλαμάτων/ημέρα" to "Average cries/day",
+    "Ώρα αιχμής" to "Peak hour",
+    "Πιο δύσκολη ημέρα" to "Busiest day",
+    "Πιο σκούρο = περισσότερα κλάματα εκείνη την ώρα." to "Darker = more cries in that hour.",
+    "Κλάματα ανά ημέρα (τελευταίες 14)" to "Cries per day (last 14)",
 )

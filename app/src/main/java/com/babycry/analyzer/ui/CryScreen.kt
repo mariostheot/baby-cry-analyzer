@@ -32,7 +32,6 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Restaurant
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -76,7 +75,6 @@ import kotlin.math.roundToInt
 fun HomeScreen(
     viewModel: CryViewModel,
     onListen: () -> Unit,
-    onShare: () -> Unit,
     onCancel: () -> Unit,
     onSoothe: () -> Unit,
     onSafety: () -> Unit,
@@ -137,11 +135,11 @@ fun HomeScreen(
             ResultCard(
                 analysis = state.analysis!!,
                 feedbackGiven = state.feedbackGiven,
+                feedbackDeferred = state.feedbackDeferred,
                 canReplay = viewModel.canReplay,
                 onReplay = { viewModel.playLastRecording() },
-                onShare = onShare,
                 onCorrect = { viewModel.confirmPredictionCorrect() },
-                onCorrectTo = { viewModel.correctTo(it) },
+                onDefer = { viewModel.deferFeedback() },
             )
             Spacer(Modifier.height(16.dp))
         }
@@ -392,11 +390,11 @@ private fun rememberCyclingMessage(messages: List<String>): String {
 private fun ResultCard(
     analysis: CryAnalysis,
     feedbackGiven: Boolean,
+    feedbackDeferred: Boolean,
     canReplay: Boolean,
     onReplay: () -> Unit,
-    onShare: () -> Unit,
     onCorrect: () -> Unit,
-    onCorrectTo: (CryReason) -> Unit,
+    onDefer: () -> Unit,
 ) {
     val result = analysis.result
     Card(
@@ -445,21 +443,14 @@ private fun ResultCard(
             Text(tr(top.advice), style = MaterialTheme.typography.bodyMedium)
 
             Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onReplay,
-                    enabled = canReplay,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.size(6.dp))
-                    Text(tr("Άκου ξανά"), maxLines = 1)
-                }
-                OutlinedButton(onClick = onShare, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.Share, contentDescription = null)
-                    Spacer(Modifier.size(6.dp))
-                    Text(tr("Κοινοποίηση"), maxLines = 1)
-                }
+            OutlinedButton(
+                onClick = onReplay,
+                enabled = canReplay,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                Spacer(Modifier.size(6.dp))
+                Text(tr("Άκου ξανά"), maxLines = 1)
             }
 
             Spacer(Modifier.height(16.dp))
@@ -476,15 +467,19 @@ private fun ResultCard(
             Divider()
             Spacer(Modifier.height(12.dp))
 
-            if (feedbackGiven) {
-                Text(
+            when {
+                feedbackGiven -> Text(
                     tr("Ευχαριστώ! Θα μάθω από αυτό."),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.secondary,
                     fontWeight = FontWeight.Medium,
                 )
-            } else {
-                FeedbackSection(onCorrect = onCorrect, onCorrectTo = onCorrectTo)
+                feedbackDeferred -> Text(
+                    tr("Κανένα πρόβλημα — θα σε ρωτήσουμε ξανά σε λίγα λεπτά, μόλις καταλάβεις."),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                )
+                else -> FeedbackSection(onCorrect = onCorrect, onDefer = onDefer)
             }
         }
     }
@@ -493,40 +488,26 @@ private fun ResultCard(
 @Composable
 private fun FeedbackSection(
     onCorrect: () -> Unit,
-    onCorrectTo: (CryReason) -> Unit,
+    onDefer: () -> Unit,
 ) {
     Text(tr("Ξέρεις ήδη γιατί έκλαψε;"), style = MaterialTheme.typography.labelLarge)
-    Spacer(Modifier.height(4.dp))
-    Text(
-        tr("Αν όχι, μην ανησυχείς — θα σε ρωτήσουμε σε λίγα λεπτά, μόλις καταλάβεις (π.χ. αφού το ταΐσεις κι ηρεμήσει)."),
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-    )
     Spacer(Modifier.height(8.dp))
-    Button(onClick = onCorrect, modifier = Modifier.fillMaxWidth()) {
-        Icon(Icons.Filled.Check, contentDescription = null)
-        Spacer(Modifier.size(8.dp))
-        Text(tr("Ναι, η εκτίμηση ήταν σωστή"))
-    }
-    Spacer(Modifier.height(8.dp))
-    Text(tr("...ή διάλεξε τη σωστή αιτία:"), style = MaterialTheme.typography.bodyMedium)
-    Spacer(Modifier.height(8.dp))
-    Column {
-        CryReason.canonicalOrder.chunked(2).forEach { pair ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                pair.forEach { reason ->
-                    OutlinedButton(
-                        onClick = { onCorrectTo(reason) },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("${reason.emoji} ${tr(reason.displayName)}", maxLines = 1, fontSize = 12.sp)
-                    }
-                }
-                if (pair.size == 1) Spacer(Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(8.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = onCorrect, modifier = Modifier.weight(1f)) {
+            Icon(Icons.Filled.Check, contentDescription = null)
+            Spacer(Modifier.size(6.dp))
+            Text(tr("Ναι, σωστή"), maxLines = 1)
+        }
+        OutlinedButton(onClick = onDefer, modifier = Modifier.weight(1f)) {
+            Text(tr("Δεν ξέρω ακόμα"), maxLines = 1)
         }
     }
+    Spacer(Modifier.height(8.dp))
+    Text(
+        tr("Αν δεν ξέρεις ακόμα, θα σε ρωτήσουμε σε λίγα λεπτά μόλις καταλάβεις (π.χ. αφού το ταΐσεις κι ηρεμήσει). Μπορείς να το αλλάξεις και αργότερα από το Ιστορικό."),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+    )
 }
 
 /**

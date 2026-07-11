@@ -130,6 +130,11 @@ class CryRepository private constructor(
         val idx = labels.indexOf(correctReason).coerceAtLeast(0)
         cryDao.update(event.copy(confirmedIndex = idx))
 
+        // Always drop any earlier learning example from this same cry first, so correcting the
+        // reason days later never leaves a stale/contradictory label behind - even if the
+        // recording is no longer stored and we can't re-add a corrected one.
+        feedbackDao.deleteByEvent(eventId)
+
         val emb = embedding ?: clipStore.readEmbedding(eventId)
         if (emb != null) {
             feedbackDao.insert(
@@ -137,12 +142,15 @@ class CryRepository private constructor(
                     timestamp = System.currentTimeMillis(),
                     labelIndex = idx,
                     embedding = emb,
+                    sourceEventId = eventId,
                 )
             )
-            val all = feedbackDao.all()
-            analyzer.personalization.updatePrototypes(all)
-            analyzer.personalization.maybeTrain(all)
         }
+        // Rebuild the personalization from the current (clean) set - covers both the added
+        // corrected example and the case where we only removed a stale one.
+        val all = feedbackDao.all()
+        analyzer.personalization.updatePrototypes(all)
+        analyzer.personalization.maybeTrain(all)
         if (pendingId() == eventId) clearPending()
     }
 
@@ -183,6 +191,24 @@ class CryRepository private constructor(
         feedingDao.last()?.let {
             (System.currentTimeMillis() - it.timestamp) / 3_600_000f
         }
+    }
+
+    suspend fun lastFeedTimestamp(): Long? = withContext(Dispatchers.IO) { feedingDao.last()?.timestamp }
+
+    /**
+     * When to fire the "feeding time is near" heads-up, as (delayFromNowMs, lastFeedTimestamp),
+     * or null if we can't/shouldn't (no feed logged yet, or the lead time already passed). Uses
+     * the age-appropriate feeding interval and warns [FeedReminder.LEAD_MINUTES] before it.
+     */
+    suspend fun feedReminderPlan(): Pair<Long, Long>? = withContext(Dispatchers.IO) {
+        val last = feedingDao.last()?.timestamp ?: return@withContext null
+        val profile = getProfile()
+        val intervalHours = com.babycry.analyzer.context.ContextPrior
+            .expectedFeedIntervalHours(profile.ageMonths(), profile.ageDays())
+        val remindAt = last + (intervalHours * 3_600_000L).toLong() -
+            com.babycry.analyzer.notify.FeedReminder.LEAD_MINUTES * 60_000L
+        val delay = remindAt - System.currentTimeMillis()
+        if (delay <= 0L) null else delay to last
     }
 
     suspend fun resetPersonalization() = withContext(Dispatchers.Default) {
@@ -383,6 +409,16 @@ class CryRepository private constructor(
         clipStore.writeDatasetZip(out, cryDao.allEvents(), labels)
     }
 
+    /** Confirmed cries that still have a saved recording - the parent's playable library. */
+    suspend fun libraryEvents(): List<CryEvent> = withContext(Dispatchers.IO) {
+        cryDao.confirmedEvents().filter { clipStore.hasClip(it.id) }
+    }
+
+    /** Reads a saved recording back to a waveform for replay from the library. */
+    suspend fun readClipSamples(eventId: Long): FloatArray? = withContext(Dispatchers.IO) {
+        clipStore.readClipSamples(eventId)
+    }
+
     // ---- Human-friendly report (HTML) ----------------------------------------
 
     /**
@@ -396,6 +432,7 @@ class CryRepository private constructor(
             if (lang == AppLang.EN) Locale.ENGLISH else Locale("el"),
         )
         val events = cryDao.allEvents()
+        val feedings = feedingDao.allList()
         val stats = stats()
         val profile = getProfile()
         val cries = events.filter { it.cryDetected }
@@ -425,6 +462,15 @@ class CryRepository private constructor(
             th,td{padding:10px 12px;text-align:left;font-size:13px;border-bottom:1px solid #eee}
             th{background:#6750A4;color:#fff;font-weight:600}
             .ok{color:#3a8a4f}.corr{color:#b5651d}
+            .heat{display:flex;gap:2px;margin:6px 0}
+            .heat .c{flex:1;height:34px;border-radius:3px}
+            .axis{display:flex;justify-content:space-between;font-size:10px;color:#9a9aa2;margin-bottom:4px}
+            .days{display:flex;align-items:flex-end;gap:4px;height:96px;margin-top:6px}
+            .days .col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end}
+            .days .b{width:100%;background:#6750A4;border-radius:5px}
+            .days .lbl{font-size:9px;color:#9a9aa2;margin-top:3px}
+            .days .cnt{font-size:9px;color:#6b6b74}
+            .note{font-size:12px;color:#6b6b74;margin:2px 0 10px}
             .foot{color:#9a9aa2;font-size:11px;margin-top:24px;text-align:center}
             """.trimIndent()
         )
@@ -443,6 +489,76 @@ class CryRepository private constructor(
         sb.append("<div class=\"card\"><div class=\"n\">${stats.confirmedCount}</div><div class=\"l\">${trS("Επιβεβαιώσεις")}</div></div>")
         sb.append("<div class=\"card\"><div class=\"n\">${stats.feedbackCount}</div><div class=\"l\">${trS("Δείγματα εκμάθησης")}</div></div>")
         sb.append("</div>")
+
+        // ---- Long-term overview: the picture that only emerges after days/weeks of use. ----
+        if (cries.isNotEmpty()) {
+            val cal = java.util.Calendar.getInstance()
+            val perHour = IntArray(24)
+            val perDow = IntArray(7)
+            for (e in cries) {
+                cal.timeInMillis = e.timestamp
+                perHour[cal.get(java.util.Calendar.HOUR_OF_DAY)]++
+                perDow[cal.get(java.util.Calendar.DAY_OF_WEEK) - 1]++
+            }
+            val maxHour = (perHour.maxOrNull() ?: 0).coerceAtLeast(1)
+            val peakHour = perHour.indexOf(perHour.maxOrNull() ?: 0)
+            val busiestDow = perDow.indexOf(perDow.maxOrNull() ?: 0)
+            val firstTs = cries.minOf { it.timestamp }
+            val daysTracked = (((System.currentTimeMillis() - firstTs) / 86_400_000L) + 1).toInt().coerceAtLeast(1)
+            val avgPerDay = cries.size.toFloat() / daysTracked
+            val dowNames = java.text.DateFormatSymbols(
+                if (lang == AppLang.EN) Locale.ENGLISH else Locale("el"),
+            ).weekdays
+            val avgFeedGapMs = if (feedings.size >= 2) {
+                var sum = 0L // feedings come DESC by timestamp
+                for (i in 0 until feedings.size - 1) sum += (feedings[i].timestamp - feedings[i + 1].timestamp)
+                sum / (feedings.size - 1)
+            } else null
+
+            sb.append("<h2>${trS("Συνολική εικόνα")}</h2>")
+            sb.append("<div class=\"row\"><span>${trS("Ημέρες καταγραφής")}</span><span>$daysTracked</span></div>")
+            sb.append("<div class=\"row\"><span>${trS("Μέσος όρος κλαμάτων/ημέρα")}</span><span>${"%.1f".format(avgPerDay)}</span></div>")
+            val peakTxt = "%02d:00–%02d:00".format(peakHour, (peakHour + 1) % 24)
+            sb.append("<div class=\"row\"><span>${trS("Ώρα αιχμής")}</span><span>$peakTxt</span></div>")
+            sb.append("<div class=\"row\"><span>${trS("Πιο δύσκολη ημέρα")}</span><span>${esc(dowNames.getOrElse(busiestDow + 1) { "" })}</span></div>")
+            if (avgFeedGapMs != null) {
+                val fg = "${avgFeedGapMs / 3_600_000L}h ${(avgFeedGapMs % 3_600_000L) / 60_000L}m"
+                sb.append("<div class=\"row\"><span>${trS("Μέσο διάστημα ταϊσμάτων")}</span><span>$fg</span></div>")
+            }
+
+            // Hour-of-day heatmap
+            sb.append("<h2>${trS("Κλάμα ανά ώρα της ημέρας")}</h2>")
+            sb.append("<p class=\"note\">${trS("Πιο σκούρο = περισσότερα κλάματα εκείνη την ώρα.")}</p>")
+            sb.append("<div class=\"heat\">")
+            for (h in 0 until 24) {
+                val a = if (perHour[h] == 0) 0.06 else 0.25 + 0.75 * (perHour[h].toDouble() / maxHour)
+                sb.append("<div class=\"c\" style=\"background:rgba(103,80,164,${"%.2f".format(a)})\"></div>")
+            }
+            sb.append("</div>")
+            sb.append("<div class=\"axis\"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>")
+
+            // Cries per day (last 14) - shows the trend over the past two weeks.
+            val dayMs = 86_400_000L
+            cal.timeInMillis = System.currentTimeMillis()
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            cal.set(java.util.Calendar.MINUTE, 0)
+            cal.set(java.util.Calendar.SECOND, 0)
+            cal.set(java.util.Calendar.MILLISECOND, 0)
+            val todayStart = cal.timeInMillis
+            val dayFmt = SimpleDateFormat("d/M", if (lang == AppLang.EN) Locale.ENGLISH else Locale("el"))
+            val perDay = (13 downTo 0).map { back ->
+                val start = todayStart - back * dayMs
+                dayFmt.format(Date(start)) to cries.count { it.timestamp in start until (start + dayMs) }
+            }
+            val maxDay = (perDay.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
+            sb.append("<h2>${trS("Κλάματα ανά ημέρα (τελευταίες 14)")}</h2>")
+            sb.append("<div class=\"days\">")
+            for ((label, count) in perDay) {
+                val hpx = (6 + 74.0 * count / maxDay).toInt()
+                sb.append("<div class=\"col\"><div class=\"cnt\">$count</div><div class=\"b\" style=\"height:${hpx}px\"></div><div class=\"lbl\">${esc(label)}</div></div>")
+            }
+            sb.append("</div>")
+        }
 
         // Reason breakdown
         val distTotal = stats.predictedDistribution.sum().coerceAtLeast(1)
@@ -522,6 +638,7 @@ class CryRepository private constructor(
                 put("timestamp", f.timestamp)
                 put("labelIndex", f.labelIndex)
                 put("embedding", encodeFloats(f.embedding))
+                put("sourceEventId", f.sourceEventId)
             })
         }
         root.put("feedback", fbArr)
@@ -598,6 +715,7 @@ class CryRepository private constructor(
                         timestamp = o.getLong("timestamp"),
                         labelIndex = o.getInt("labelIndex"),
                         embedding = decodeFloats(o.getString("embedding")),
+                        sourceEventId = o.optLong("sourceEventId", 0L),
                     )
                 )
             }

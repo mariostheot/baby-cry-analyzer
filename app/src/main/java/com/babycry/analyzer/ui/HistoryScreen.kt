@@ -415,6 +415,17 @@ private fun PatternsCard(s: HistorySummary) {
             )
 
             Spacer(Modifier.height(14.dp))
+            Text(tr("Κλάμα ανά ώρα της ημέρας"), style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                tr("Πιο σκούρο = περισσότερα κλάματα εκείνη την ώρα. Δείχνει τις «δύσκολες» ώρες (συχνά αργά το απόγευμα/βράδυ)."),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+            Spacer(Modifier.height(8.dp))
+            HourHeatmap(s.perHour)
+
+            Spacer(Modifier.height(14.dp))
             Text(tr("Κλάματα ανά ημέρα (τελευταίες 7)"), style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(8.dp))
             val maxDay = (s.perDay.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
@@ -457,6 +468,51 @@ private fun PatternsCard(s: HistorySummary) {
     }
 }
 
+/**
+ * A 24-cell strip showing which hour of the day the baby tends to cry in. Darker = more
+ * cries in that hour (a compact "heatmap"), so parents can spot the classic evening
+ * "witching hour" at a glance.
+ */
+@Composable
+private fun HourHeatmap(perHour: List<Int>) {
+    val max = (perHour.maxOrNull() ?: 0).coerceAtLeast(1)
+    val peak = perHour.indexOf(perHour.maxOrNull() ?: 0)
+    val base = MaterialTheme.colorScheme.primary
+    val empty = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            for (h in 0 until 24) {
+                val c = perHour.getOrElse(h) { 0 }
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(26.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(if (c == 0) empty else base.copy(alpha = 0.25f + 0.75f * (c.toFloat() / max))),
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            listOf("00", "06", "12", "18", "23").forEach {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                )
+            }
+        }
+        if (perHour.sum() > 0) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "${tr("Ώρα αιχμής:")} %02d:00–%02d:00".format(peak, (peak + 1) % 24),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            )
+        }
+    }
+}
+
 @Composable
 private fun InsightLine(label: String, value: String) {
     Row(
@@ -490,6 +546,7 @@ private data class HistorySummary(
     val peakHour: Int?,
     val avgFeedGapMs: Long?,
     val perDay: List<Pair<String, Int>>,
+    val perHour: List<Int>,     // 24 slots, cries started in each hour-of-day
 )
 
 private fun reasonOf(e: CryEvent, labels: List<CryReason>): CryReason? {
@@ -554,6 +611,7 @@ private fun computeSummary(
         peakHour = peakHour,
         avgFeedGapMs = avgFeedGapMs,
         perDay = perDay,
+        perHour = perHour.toList(),
     )
 }
 

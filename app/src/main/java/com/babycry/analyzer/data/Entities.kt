@@ -1,5 +1,6 @@
 package com.babycry.analyzer.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -23,6 +24,10 @@ data class CryEvent(
 /**
  * A user-confirmed example (YAMNet embedding + true label) kept on device to personalize
  * predictions. Never leaves the phone.
+ *
+ * [sourceEventId] links the example back to the cry it came from. That way, if the parent
+ * later corrects the reason of that cry, we can REPLACE this example instead of leaving a
+ * contradictory duplicate (same embedding, two different labels) behind. 0 = legacy/unknown.
  */
 @Entity(tableName = "feedback_examples")
 data class FeedbackExample(
@@ -30,6 +35,9 @@ data class FeedbackExample(
     val timestamp: Long,
     val labelIndex: Int,
     val embedding: FloatArray,
+    // Default declared here to exactly match the v1->v2 migration's `DEFAULT 0`, so Room's
+    // schema check passes on upgrade regardless of Room version.
+    @ColumnInfo(defaultValue = "0") val sourceEventId: Long = 0,
 ) {
     // data class with an array field: override equality on identity to keep Room/data happy.
     override fun equals(other: Any?): Boolean = this === other

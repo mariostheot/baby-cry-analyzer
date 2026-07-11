@@ -46,7 +46,7 @@ fun SafetyScreen(modifier: Modifier = Modifier) {
         ) {
             Column(Modifier.padding(16.dp)) {
                 Text(
-                    tr("Ζήτησε άμεσα βοήθεια (παιδίατρος / ΕΚΑΒ 166) αν:"),
+                    tr("Ζήτησε άμεσα βοήθεια αν:"),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onErrorContainer,

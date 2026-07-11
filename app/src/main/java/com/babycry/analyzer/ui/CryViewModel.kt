@@ -16,6 +16,7 @@ import com.babycry.analyzer.model.AnalysisEngine
 import com.babycry.analyzer.model.BabyProfile
 import com.babycry.analyzer.model.CryReason
 import com.babycry.analyzer.notify.ConfirmReminder
+import com.babycry.analyzer.notify.FeedReminder
 import com.babycry.analyzer.ui.i18n.AppLang
 import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.trS
@@ -39,6 +40,9 @@ data class HomeUiState(
     val analysis: CryAnalysis? = null,
     val eventId: Long? = null,
     val feedbackGiven: Boolean = false,
+    /** Parent tapped "don't know yet": stop asking on the result card; the delayed
+     *  reminder we already scheduled will follow up later. */
+    val feedbackDeferred: Boolean = false,
     val message: String? = null,
 )
 
@@ -220,6 +224,15 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun correctTo(reason: CryReason) = submit(reason)
 
+    /**
+     * "Don't know yet" on the fresh result: we don't record anything now. The reminder we
+     * scheduled when the cry was detected will ask again in a few minutes, and the cry stays
+     * editable from History.
+     */
+    fun deferFeedback() {
+        _home.update { it.copy(feedbackDeferred = true) }
+    }
+
     private fun submit(reason: CryReason) {
         val state = _home.value
         val eventId = state.eventId ?: return
@@ -274,6 +287,23 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.logFeeding()
             _home.update { it.copy(message = trS("Καταγράφηκε το τάισμα.")) }
+            scheduleFeedReminder()
+        }
+    }
+
+    /**
+     * (Re)schedule the "feeding time is near" heads-up from the last logged feed. Safe to call
+     * on app start; cancels itself when there's nothing to remind about.
+     */
+    fun scheduleFeedReminder() {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val plan = repo.feedReminderPlan()
+            if (plan == null) {
+                FeedReminder.cancel(app)
+            } else {
+                FeedReminder.schedule(app, plan.first, plan.second)
+            }
         }
     }
 
@@ -281,6 +311,19 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     fun playLastRecording() {
         val wave = lastWaveform ?: return
         viewModelScope.launch { player.play(wave) }
+    }
+
+    // ---- Saved recordings library --------------------------------------------
+
+    /** Confirmed cries that still have a saved recording (reason + time + playable clip). */
+    suspend fun libraryEvents(): List<CryEvent> = repo.libraryEvents()
+
+    /** Replay a stored recording from the library. */
+    fun playStoredClip(eventId: Long) {
+        viewModelScope.launch {
+            val wave = repo.readClipSamples(eventId) ?: return@launch
+            player.play(wave)
+        }
     }
 
     /** A shareable text summary of the current result, or null if there is nothing to share. */

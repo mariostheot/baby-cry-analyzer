@@ -53,6 +53,26 @@ class ClipStore(context: Context) {
         }.getOrNull()
     }
 
+    /** Whether we still have the audio clip for this event. */
+    fun hasClip(eventId: Long): Boolean = wav(eventId).exists()
+
+    /**
+     * Reads a stored clip back into a normalized -1f..1f waveform so it can be replayed later
+     * (e.g. from the saved-recordings library). Our WAV writer uses a fixed 44-byte PCM
+     * 16-bit mono header, so we skip that and read the samples.
+     */
+    fun readClipSamples(eventId: Long): FloatArray? {
+        val f = wav(eventId)
+        if (!f.exists()) return null
+        return runCatching {
+            val bytes = f.readBytes()
+            if (bytes.size <= 44) return null
+            val count = (bytes.size - 44) / 2
+            val buf = ByteBuffer.wrap(bytes, 44, bytes.size - 44).order(ByteOrder.LITTLE_ENDIAN)
+            FloatArray(count) { buf.short / 32768f }
+        }.getOrNull()
+    }
+
     fun deleteClip(eventId: Long) {
         runCatching { wav(eventId).delete() }
         runCatching { emb(eventId).delete() }
