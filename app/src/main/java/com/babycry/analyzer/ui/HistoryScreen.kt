@@ -169,7 +169,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
             onDismissRequest = { confirmClear = false },
             title = { Text(tr("Καθαρισμός ιστορικού;")) },
             text = {
-                Text(tr("Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα, τα γραφήματα και τα ταΐσματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται."))
+                Text(tr("Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα (μαζί με τις αποθηκευμένες ηχογραφήσεις), τα ταΐσματα, οι αλλαγές πάνας, το tummy time και τα γραφήματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται."))
             },
             confirmButton = {
                 TextButton(onClick = {

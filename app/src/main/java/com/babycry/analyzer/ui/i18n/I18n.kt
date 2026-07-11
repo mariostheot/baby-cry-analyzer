@@ -138,8 +138,8 @@ private val EN: Map<String, String> = mapOf(
     "Πάτησε μια καταγραφή για να ορίσεις/διορθώσεις την αιτία." to
         "Tap a record to set or correct the cause.",
     "Καθαρισμός ιστορικού;" to "Clear history?",
-    "Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα, τα γραφήματα και τα ταΐσματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται." to
-        "All recorded cries, charts, and feedings will be deleted. What the model learned from you will NOT be affected.",
+    "Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα (μαζί με τις αποθηκευμένες ηχογραφήσεις), τα ταΐσματα, οι αλλαγές πάνας, το tummy time και τα γραφήματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται." to
+        "All recorded cries (including saved recordings), feedings, diaper changes, tummy time, and charts will be deleted. What the model learned from you will NOT be affected.",
     "Διαγραφή" to "Delete",
     "Διαγραφή κλάματος;" to "Delete this cry?",
     "Θα διαγραφεί οριστικά αυτή η καταγραφή κλάματος (και η ηχογράφησή της). Δεν μπορεί να αναιρεθεί." to
@@ -240,8 +240,8 @@ private val EN: Map<String, String> = mapOf(
         "Forgets what it learned from you. History & stats are NOT deleted.",
     "Ιστορικό & στατιστικά" to "History & stats",
     "Καθαρισμός ιστορικού & στατιστικών" to "Clear history & stats",
-    "Μηδενίζει τα καταγεγραμμένα κλάματα, τα γραφήματα και τα ταΐσματα. Η εκμάθηση παραμένει." to
-        "Clears recorded cries, charts, and feedings. Learning remains.",
+    "Μηδενίζει κλάματα, ηχογραφήσεις, ταΐσματα, αλλαγές πάνας, tummy time και γραφήματα. Η εκμάθηση παραμένει." to
+        "Clears cries, recordings, feedings, diaper changes, tummy time, and charts. Learning remains.",
     "Μηδενισμός προσωποποίησης;" to "Reset personalization?",
     "Το μοντέλο θα ξεχάσει όσα έμαθε από τις διορθώσεις σου και θα επιστρέψει στη βασική του κατάσταση. Το ιστορικό & τα στατιστικά μένουν." to
         "The model will forget what it learned from your corrections and return to its default state. History & stats remain.",
