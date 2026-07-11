@@ -328,7 +328,7 @@ private fun TodayCard(s: HistorySummary) {
                 if (s.poopsToday > 0) "${s.diapersToday}  (💩 ${s.poopsToday})" else s.diapersToday.toString(),
             )
             Spacer(Modifier.height(6.dp))
-            InsightLine("🤸 Tummy Time", "${s.tummyToday} / ${s.tummyGoal}")
+            InsightLine("🤸 ${tr("Tummy Time")}", "${s.tummyToday} / ${s.tummyGoal}")
             if (s.topReasonToday != null) {
                 Spacer(Modifier.height(6.dp))
                 InsightLine(
@@ -482,7 +482,7 @@ private fun TummyRow(tummy: TummyTimeEvent) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("🤸  Tummy Time", style = MaterialTheme.typography.bodyLarge)
+            Text("🤸  ${tr("Tummy Time")}", style = MaterialTheme.typography.bodyLarge)
             Text(
                 timeFormat().format(Date(tummy.timestamp)),
                 style = MaterialTheme.typography.bodyMedium,

@@ -238,7 +238,11 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
                 // we remember this cry and remind them in a few minutes to confirm the real cause.
                 if (!noCry) {
                     _pending.value = repo.pendingConfirmation()
-                    ConfirmReminder.schedule(getApplication<Application>(), REMINDER_DELAY_MIN)
+                    ConfirmReminder.schedule(
+                        getApplication<Application>(),
+                        REMINDER_DELAY_MIN,
+                        repo.currentProfileId(),
+                    )
                 }
             } catch (t: Throwable) {
                 // Never let an inference error kill the app: surface it and reset.
@@ -311,6 +315,8 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     suspend fun datasetInfo(): Pair<Int, Long> = repo.datasetInfo()
+
+    suspend fun backupRecordingCount(): Int = repo.backupRecordingCount()
 
     suspend fun writeDatasetZip(out: OutputStream): Int = repo.writeDatasetZip(out)
 
@@ -478,6 +484,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.addProfile("", null)
             refreshProfiles()
+            refreshActiveProfileState()
             _home.update { it.copy(message = trS("Συμπλήρωσε τα στοιχεία του νέου μωρού.")) }
         }
     }
@@ -486,10 +493,17 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.setActiveProfile(id)
             refreshProfiles()
-            repo.refreshPersonalization()
-            refreshPending()
-            scheduleFeedReminder()
-            scheduleTummyReminder()
+            refreshActiveProfileState()
+        }
+    }
+
+    fun openPendingForBaby(id: String?) {
+        viewModelScope.launch {
+            if (!id.isNullOrBlank() && repo.hasProfile(id)) {
+                repo.setActiveProfile(id)
+            }
+            refreshProfiles()
+            refreshActiveProfileState()
         }
     }
 
@@ -497,6 +511,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.deleteProfile(id)
             refreshProfiles()
+            refreshActiveProfileState()
         }
     }
 
@@ -504,6 +519,8 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.updateActiveProfile(name.trim(), birthMillis, gender)
             refreshProfiles()
+            scheduleFeedReminder()
+            scheduleTummyReminder()
             _home.update { it.copy(message = trS("Το προφίλ αποθηκεύτηκε.")) }
         }
     }
@@ -519,8 +536,16 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
             repo.addProfile(name.trim(), birthMillis, colicConfirmed, gender)
             repo.setOnboardingComplete()
             refreshProfiles()
+            refreshActiveProfileState()
             _onboardingComplete.value = true
         }
+    }
+
+    private suspend fun refreshActiveProfileState() {
+        repo.refreshPersonalization()
+        refreshPending()
+        scheduleFeedReminder()
+        scheduleTummyReminder()
     }
 
     fun skipOnboarding() {

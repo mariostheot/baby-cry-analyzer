@@ -81,16 +81,22 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private var openConfirmRequest by mutableStateOf(false)
+    private var openConfirmProfileId by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         openConfirmRequest = intent?.getBooleanExtra(ConfirmReminder.EXTRA_OPEN_CONFIRM, false) == true
+        openConfirmProfileId = intent?.getStringExtra(ConfirmReminder.EXTRA_PROFILE_ID)
         setContent {
             BabyCryTheme {
                 AppRoot(
                     openConfirmRequest = openConfirmRequest,
-                    onOpenConfirmHandled = { openConfirmRequest = false },
+                    openConfirmProfileId = openConfirmProfileId,
+                    onOpenConfirmHandled = {
+                        openConfirmRequest = false
+                        openConfirmProfileId = null
+                    },
                 )
             }
         }
@@ -101,6 +107,7 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         if (intent.getBooleanExtra(ConfirmReminder.EXTRA_OPEN_CONFIRM, false)) {
             openConfirmRequest = true
+            openConfirmProfileId = intent.getStringExtra(ConfirmReminder.EXTRA_PROFILE_ID)
         }
     }
 }
@@ -125,6 +132,7 @@ private enum class Overlay(val title: String) {
 @Composable
 private fun AppRoot(
     openConfirmRequest: Boolean,
+    openConfirmProfileId: String?,
     onOpenConfirmHandled: () -> Unit,
 ) {
     val viewModel: CryViewModel = viewModel()
@@ -133,6 +141,7 @@ private fun AppRoot(
         AppRootContent(
             viewModel = viewModel,
             openConfirmRequest = openConfirmRequest,
+            openConfirmProfileId = openConfirmProfileId,
             onOpenConfirmHandled = onOpenConfirmHandled,
         )
     }
@@ -143,6 +152,7 @@ private fun AppRoot(
 private fun AppRootContent(
     viewModel: CryViewModel,
     openConfirmRequest: Boolean,
+    openConfirmProfileId: String?,
     onOpenConfirmHandled: () -> Unit,
 ) {
     val pagerState = rememberPagerState(pageCount = { Tab.entries.size })
@@ -239,11 +249,11 @@ private fun AppRootContent(
         viewModel.scheduleTummyReminder()
     }
 
-    LaunchedEffect(openConfirmRequest, onboardingDone) {
+    LaunchedEffect(openConfirmRequest, openConfirmProfileId, onboardingDone) {
         if (openConfirmRequest && onboardingDone) {
+            viewModel.openPendingForBaby(openConfirmProfileId)
             overlay = null
             pagerState.animateScrollToPage(Tab.HOME.ordinal)
-            viewModel.refreshPending()
             onOpenConfirmHandled()
         }
     }
@@ -303,7 +313,7 @@ private fun AppRootContent(
                                 onClick = { menuOpen = false; overlay = Overlay.SOOTHE },
                             )
                             DropdownMenuItem(
-                                text = { Text("Tummy Time") },
+                                text = { Text(tr("Tummy Time")) },
                                 leadingIcon = { Icon(Icons.Filled.SelfImprovement, contentDescription = null) },
                                 onClick = { menuOpen = false; overlay = Overlay.TUMMY },
                             )

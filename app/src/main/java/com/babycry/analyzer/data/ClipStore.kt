@@ -100,6 +100,10 @@ class ClipStore(context: Context) {
 
     fun totalBytes(): Long = dir.listFiles()?.sumOf { it.length() } ?: 0L
 
+    fun bytesFor(eventId: Long): Long =
+        (wav(eventId).takeIf { it.exists() }?.length() ?: 0L) +
+            (emb(eventId).takeIf { it.exists() }?.length() ?: 0L)
+
     /**
      * Writes a zip of every **confirmed** clip, grouped in per-reason folders, plus a
      * `labels.csv`. This is the exportable, labelled dataset.

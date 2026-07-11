@@ -90,7 +90,7 @@ fun TummyTimeScreen(modifier: Modifier = Modifier) {
             .padding(16.dp),
     ) {
         Text(
-            "Tummy Time",
+            tr("Tummy Time"),
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
         )

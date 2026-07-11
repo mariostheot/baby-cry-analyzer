@@ -45,10 +45,15 @@ fun ReportScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var html by remember { mutableStateOf<String?>(null) }
     var webRef by remember { mutableStateOf<WebView?>(null) }
+    var loadedHtml by remember { mutableStateOf<String?>(null) }
     val language by viewModel.language.collectAsState()
     val profile by viewModel.profile.collectAsState()
 
-    LaunchedEffect(language, profile.id) { html = viewModel.exportReportHtml() }
+    LaunchedEffect(language, profile.id, profile.name, profile.birthMillis, profile.gender) {
+        html = null
+        loadedHtml = null
+        html = viewModel.exportReportHtml()
+    }
 
     Column(modifier.fillMaxSize()) {
         val h = html
@@ -63,7 +68,10 @@ fun ReportScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.End,
             ) {
-                Button(onClick = { webRef?.let { printReport(context, it) } }) {
+                Button(
+                    onClick = { webRef?.let { printReport(context, it) } },
+                    enabled = webRef != null,
+                ) {
                     Icon(Icons.Filled.PictureAsPdf, contentDescription = null)
                     Spacer(Modifier.size(8.dp))
                     Text(tr("Αποθήκευση / Κοινοποίηση PDF"))
@@ -76,7 +84,12 @@ fun ReportScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                         webRef = this
                     }
                 },
-                update = { it.loadDataWithBaseURL(null, h, "text/html", "UTF-8", null) },
+                update = {
+                    if (loadedHtml != h) {
+                        it.loadDataWithBaseURL(null, h, "text/html", "UTF-8", null)
+                        loadedHtml = h
+                    }
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         }

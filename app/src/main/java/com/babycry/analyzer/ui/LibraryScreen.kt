@@ -141,16 +141,22 @@ private fun LibraryRow(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
             }
-            FilledTonalIconButton(onClick = onPlay) {
-                Icon(Icons.Filled.PlayArrow, contentDescription = tr("Άκου ξανά"))
+            val action = when {
+                isPlaying -> onPause
+                isPaused -> onResume
+                else -> onPlay
             }
-            if (isPlaying || isPaused) {
-                FilledTonalIconButton(onClick = if (isPaused) onResume else onPause) {
-                    Icon(
-                        if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                        contentDescription = tr(if (isPaused) "Συνέχεια" else "Παύση"),
-                    )
-                }
+            FilledTonalIconButton(onClick = action) {
+                Icon(
+                    if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = tr(
+                        when {
+                            isPlaying -> "Παύση"
+                            isPaused -> "Συνέχεια"
+                            else -> "Άκου ξανά"
+                        },
+                    ),
+                )
             }
         }
     }

@@ -37,7 +37,7 @@ data class BabyProfile(
         langIsEnglish -> name
         gender == BabyGender.BOY -> "ο $name"
         gender == BabyGender.GIRL -> "η $name"
-        else -> name
+        else -> "το $name"
     }
 
     fun displayNameAccusative(langIsEnglish: Boolean): String = when {
@@ -45,7 +45,7 @@ data class BabyProfile(
         langIsEnglish -> name
         gender == BabyGender.BOY -> "τον $name"
         gender == BabyGender.GIRL -> "την $name"
-        else -> name
+        else -> "το $name"
     }
 
     /** Whole days since birth, or null if no birth date is set. Needed for the very early

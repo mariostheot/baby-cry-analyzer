@@ -1,5 +1,6 @@
 package com.babycry.analyzer.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -212,7 +213,9 @@ private fun GenderOptions(selected: BabyGender, onSelect: (BabyGender) -> Unit) 
         BabyGender.GIRL to tr("Κορίτσι"),
     ).forEach { (value, label) ->
         Row(
-            Modifier.fillMaxWidth(),
+            Modifier
+                .fillMaxWidth()
+                .clickable { onSelect(value) },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             RadioButton(selected = selected == value, onClick = { onSelect(value) })

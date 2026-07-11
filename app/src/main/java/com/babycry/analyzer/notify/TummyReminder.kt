@@ -35,6 +35,7 @@ object TummyReminder {
     const val CHANNEL_ID = "tummy_reminders"
     const val NOTIFICATION_ID = 4203
     const val EXTRA_SLOT = "tummy_slot"
+    const val EXTRA_PROFILE_ID = "tummy_profile_id"
     const val SLOT_AM = "am"
     const val SLOT_PM = "pm"
     private const val REQ_AM = 4210
@@ -52,14 +53,17 @@ object TummyReminder {
             cancel(context)
             return
         }
-        scheduleSlot(context, SLOT_AM, repo.tummyReminderHourAm())
-        scheduleSlot(context, SLOT_PM, repo.tummyReminderHourPm())
+        cancel(context)
+        val profileId = repo.currentProfileId()
+        if (profileId.isBlank()) return
+        scheduleSlot(context, SLOT_AM, repo.tummyReminderHourAm(), profileId)
+        scheduleSlot(context, SLOT_PM, repo.tummyReminderHourPm(), profileId)
     }
 
-    private fun scheduleSlot(context: Context, slot: String, hour: Int) {
+    private fun scheduleSlot(context: Context, slot: String, hour: Int, profileId: String) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val triggerAt = nextOccurrence(hour)
-        val pi = alarmIntent(context, slot)
+        val pi = alarmIntent(context, slot, profileId)
         val canExact =
             Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
         runCatching {
@@ -75,18 +79,23 @@ object TummyReminder {
 
     fun cancel(context: Context) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        am.cancel(alarmIntent(context, SLOT_AM))
-        am.cancel(alarmIntent(context, SLOT_PM))
+        val repo = CryRepository.get(context)
+        val profileIds = (repo.getProfiles().map { it.id } + repo.currentProfileId()).distinct()
+        for (profileId in profileIds) {
+            am.cancel(alarmIntent(context, SLOT_AM, profileId))
+            am.cancel(alarmIntent(context, SLOT_PM, profileId))
+        }
     }
 
-    private fun alarmIntent(context: Context, slot: String): PendingIntent {
+    private fun alarmIntent(context: Context, slot: String, profileId: String): PendingIntent {
         val req = if (slot == SLOT_PM) REQ_PM else REQ_AM
         val intent = Intent(context, TummyAlarmReceiver::class.java).apply {
             putExtra(EXTRA_SLOT, slot)
+            putExtra(EXTRA_PROFILE_ID, profileId)
         }
         return PendingIntent.getBroadcast(
             context,
-            req,
+            req + profileId.hashCode(),
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
@@ -117,21 +126,25 @@ object TummyReminder {
     }
 
     /** Post the reminder for [slot] and re-arm it for tomorrow. Called from [TummyAlarmReceiver]. */
-    suspend fun onFired(context: Context, slot: String) {
+    suspend fun onFired(context: Context, slot: String, profileId: String) {
         val repo = CryRepository.get(context)
         if (!repo.isTummyReminderEnabled()) {
             cancel(context)
             return
         }
+        if (!repo.hasProfile(profileId)) {
+            schedule(context, force = true)
+            return
+        }
         // Re-arm the same slot for tomorrow first, so the daily cadence survives any error below.
         val hour = if (slot == SLOT_PM) repo.tummyReminderHourPm() else repo.tummyReminderHourAm()
-        scheduleSlot(context, slot, hour)
+        scheduleSlot(context, slot, hour, profileId)
 
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         ensureChannel(context)
 
-        val goal = repo.tummyDailyGoal()
-        val done = repo.tummyDoneToday()
+        val goal = repo.tummyDailyGoal(profileId)
+        val done = repo.tummyDoneToday(profileId)
         val remaining = (goal - done).coerceAtLeast(0)
 
         val intent = Intent(context, MainActivity::class.java).apply {
@@ -194,11 +207,13 @@ object TummyReminder {
 class TummyAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val slot = intent.getStringExtra(TummyReminder.EXTRA_SLOT) ?: TummyReminder.SLOT_AM
+        val profileId = intent.getStringExtra(TummyReminder.EXTRA_PROFILE_ID)
+            ?: CryRepository.get(context).currentProfileId()
         val result = goAsync()
         val appContext = context.applicationContext
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                TummyReminder.onFired(appContext, slot)
+                TummyReminder.onFired(appContext, slot, profileId)
             } finally {
                 result.finish()
             }

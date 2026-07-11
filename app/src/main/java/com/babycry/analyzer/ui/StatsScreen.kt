@@ -208,7 +208,7 @@ private fun BabyDayTimelineCard(
             val type = DiaperType.fromNameOrNull(it.type) ?: DiaperType.WET
             add(TimelineDot(it.timestamp, type.emoji, tr("Πάνα")))
         }
-        tummy.filter { it.timestamp >= todayStart }.forEach { add(TimelineDot(it.timestamp, "🤸", "Tummy Time")) }
+        tummy.filter { it.timestamp >= todayStart }.forEach { add(TimelineDot(it.timestamp, "🤸", tr("Tummy Time"))) }
     }.sortedBy { it.timestamp }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -225,6 +225,11 @@ private fun BabyDayTimelineCard(
                             Text(dot.emoji, style = MaterialTheme.typography.titleMedium)
                             Text(
                                 hourMinute(dot.timestamp),
+                                style = MaterialTheme.typography.labelSmall,
+                                textAlign = TextAlign.Center,
+                            )
+                            Text(
+                                dot.label,
                                 style = MaterialTheme.typography.labelSmall,
                                 textAlign = TextAlign.Center,
                             )

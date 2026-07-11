@@ -34,12 +34,13 @@ object ConfirmReminder {
     const val CHANNEL_ID = "confirm_reminders"
     const val NOTIFICATION_ID = 4201
     const val EXTRA_OPEN_CONFIRM = "com.babycry.analyzer.OPEN_CONFIRM"
+    const val EXTRA_PROFILE_ID = "com.babycry.analyzer.PROFILE_ID"
     private const val ALARM_REQUEST = 4201
 
-    fun schedule(context: Context, delayMinutes: Long) {
+    fun schedule(context: Context, delayMinutes: Long, profileId: String = CryRepository.get(context).currentProfileId()) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val triggerAt = System.currentTimeMillis() + delayMinutes.coerceAtLeast(1) * 60_000L
-        val pi = alarmIntent(context)
+        val pi = alarmIntent(context, profileId)
         val canExact =
             Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
         runCatching {
@@ -54,16 +55,19 @@ object ConfirmReminder {
         }
     }
 
-    fun cancel(context: Context) {
+    fun cancel(context: Context, profileId: String = CryRepository.get(context).currentProfileId()) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        am.cancel(alarmIntent(context))
+        am.cancel(alarmIntent(context, profileId))
     }
 
-    private fun alarmIntent(context: Context): PendingIntent {
-        val intent = Intent(context, ConfirmAlarmReceiver::class.java)
+    private fun alarmIntent(context: Context, profileId: String): PendingIntent {
+        val request = ALARM_REQUEST + profileId.hashCode()
+        val intent = Intent(context, ConfirmAlarmReceiver::class.java).apply {
+            putExtra(EXTRA_PROFILE_ID, profileId)
+        }
         return PendingIntent.getBroadcast(
             context,
-            ALARM_REQUEST,
+            request,
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
@@ -85,15 +89,15 @@ object ConfirmReminder {
     }
 
     /** Build + post the "why did it cry?" notification. Called from [ConfirmAlarmReceiver]. */
-    suspend fun showReminder(context: Context) {
+    suspend fun showReminder(context: Context, profileId: String) {
         val repo = CryRepository.get(context)
-        val pending = repo.pendingConfirmation() ?: return
+        val pending = repo.pendingConfirmation(profileId) ?: return
 
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
 
         ensureChannel(context)
 
-        val profile = repo.getProfile()
+        val profile = repo.profileById(profileId) ?: repo.getProfile()
         val name = when (currentAppLang) {
             AppLang.EN -> if (profile.hasName) profile.name else "baby"
             AppLang.EL -> profile.displayNameNominative(langIsEnglish = false)
@@ -105,6 +109,7 @@ object ConfirmReminder {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(EXTRA_OPEN_CONFIRM, true)
+            putExtra(EXTRA_PROFILE_ID, profileId)
         }
         val pi = PendingIntent.getActivity(
             context,
@@ -141,11 +146,13 @@ object ConfirmReminder {
 /** Receives the exact alarm and posts the reminder notification off the main thread. */
 class ConfirmAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        val profileId = intent.getStringExtra(ConfirmReminder.EXTRA_PROFILE_ID)
+            ?: CryRepository.get(context).currentProfileId()
         val result = goAsync()
         val appContext = context.applicationContext
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                ConfirmReminder.showReminder(appContext)
+                ConfirmReminder.showReminder(appContext, profileId)
             } finally {
                 result.finish()
             }

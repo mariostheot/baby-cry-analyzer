@@ -186,36 +186,76 @@ class CryRepository private constructor(
         // Rebuild the personalization from the current (clean) set - covers both the added
         // corrected example and the case where we only removed a stale one.
         rebuildPersonalization()
-        if (pendingId() == eventId) clearPending()
+        val pendingProfileId = event.profileId.ifBlank { activeProfileId() }
+        if (pendingId(pendingProfileId) == eventId) clearPending(pendingProfileId)
     }
 
     // ---- Delayed confirmation ("why did the baby cry?") ----------------------
 
     /** The most recent detected cry still awaiting the parent's confirmation, or null. */
-    suspend fun pendingConfirmation(): CryEvent? = withContext(Dispatchers.IO) {
-        val id = pendingId().takeIf { it > 0L } ?: return@withContext null
+    suspend fun pendingConfirmation(profileId: String = activeProfileId()): CryEvent? = withContext(Dispatchers.IO) {
+        migrateLegacyPendingIfNeeded()
+        val id = pendingId(profileId).takeIf { it > 0L } ?: return@withContext null
         val event = cryDao.byId(id)
-        if (event == null || event.profileId != activeProfileId() || !event.cryDetected || event.confirmedIndex != null) {
-            clearPending()
+        if (event == null || event.profileId != profileId || !event.cryDetected || event.confirmedIndex != null) {
+            clearPending(profileId)
             null
         } else {
             event
         }
     }
 
-    fun dismissPending() = clearPending()
+    fun dismissPending() = clearPending(activeProfileId())
 
-    private fun pendingId(): Long = profilePrefs.getLong(PENDING_ID, 0L)
+    private fun pendingId(profileId: String): Long =
+        profilePrefs.getLong(pendingIdKey(profileId), 0L)
 
     private fun setPending(eventId: Long) {
+        val profileId = activeProfileId()
         profilePrefs.edit()
-            .putLong(PENDING_ID, eventId)
-            .putLong(PENDING_AT, System.currentTimeMillis())
+            .putLong(pendingIdKey(profileId), eventId)
+            .putLong(pendingAtKey(profileId), System.currentTimeMillis())
             .apply()
     }
 
-    private fun clearPending() {
+    private fun clearPending(profileId: String) {
+        profilePrefs.edit()
+            .remove(pendingIdKey(profileId))
+            .remove(pendingAtKey(profileId))
+            .apply()
+    }
+
+    private suspend fun migrateLegacyPendingIfNeeded() {
+        val legacyId = profilePrefs.getLong(PENDING_ID, 0L)
+        if (legacyId <= 0L) return
+        val legacyEvent = cryDao.byId(legacyId)
+        if (legacyEvent != null && legacyEvent.cryDetected && legacyEvent.confirmedIndex == null) {
+            val profileId = legacyEvent.profileId.ifBlank { activeProfileId() }
+            profilePrefs.edit()
+                .putLong(pendingIdKey(profileId), legacyId)
+                .putLong(pendingAtKey(profileId), profilePrefs.getLong(PENDING_AT, System.currentTimeMillis()))
+                .remove(PENDING_ID)
+                .remove(PENDING_AT)
+                .apply()
+        } else {
+            clearLegacyPending()
+        }
+    }
+
+    private fun clearLegacyPending() {
         profilePrefs.edit().remove(PENDING_ID).remove(PENDING_AT).apply()
+    }
+
+    private fun clearAllPending() {
+        val editor = profilePrefs.edit()
+        for (key in profilePrefs.all.keys) {
+            if (key == PENDING_ID || key == PENDING_AT ||
+                key.startsWith("$PENDING_ID:") || key.startsWith("$PENDING_AT:")
+            ) {
+                editor.remove(key)
+            }
+        }
+        editor.apply()
     }
 
     suspend fun logFeeding(note: String? = null) = withContext(Dispatchers.IO) {
@@ -233,12 +273,14 @@ class CryRepository private constructor(
     // ---- Tummy time: age-based daily goal + reminder --------------------------
 
     /** Recommended tummy-time sessions per day for the active baby's age. */
-    fun tummyDailyGoal(): Int =
-        com.babycry.analyzer.model.TummyTime.dailyGoal(getProfile().ageDays())
+    fun tummyDailyGoal(profileId: String = activeProfileId()): Int =
+        com.babycry.analyzer.model.TummyTime.dailyGoal(
+            (profileById(profileId) ?: getProfile()).ageDays(),
+        )
 
     /** How many tummy-time sessions have been logged since the start of today. */
-    suspend fun tummyDoneToday(): Int = withContext(Dispatchers.IO) {
-        tummyDao.countSince(activeProfileId(), startOfToday())
+    suspend fun tummyDoneToday(profileId: String = activeProfileId()): Int = withContext(Dispatchers.IO) {
+        tummyDao.countSince(profileId, startOfToday())
     }
 
     private fun startOfToday(): Long = java.util.Calendar.getInstance().apply {
@@ -374,6 +416,14 @@ class CryRepository private constructor(
         val activeId = profilePrefs.getString(ACTIVE_PROFILE, null)
         return list.firstOrNull { it.id == activeId } ?: list.first()
     }
+
+    fun currentProfileId(): String = activeProfileId()
+
+    fun profileById(profileId: String): BabyProfile? =
+        getProfiles().firstOrNull { it.id == profileId }
+
+    fun hasProfile(profileId: String): Boolean =
+        profileById(profileId) != null
 
     private fun activeProfileId(): String = getProfile().id
 
@@ -513,24 +563,32 @@ class CryRepository private constructor(
      *  model learned from you (feedback examples / personalization). Also drops the saved
      *  recordings, since they're tied to the deleted events. */
     suspend fun clearHistory() = withContext(Dispatchers.IO) {
-        clearProfileHistory(activeProfileId())
-        clearPending()
+        val profileId = activeProfileId()
+        clearProfileHistory(profileId)
+        clearPending(profileId)
     }
 
     /** Deletes a single cry event from the history (and its saved recording). */
     suspend fun deleteEvent(id: Long) = withContext(Dispatchers.IO) {
+        val event = cryDao.byId(id)
         cryDao.deleteById(id)
         feedbackDao.deleteByEvent(id)
         clipStore.deleteClip(id)
         rebuildPersonalization()
-        if (pendingId() == id) clearPending()
+        if (event?.profileId?.let { pendingId(it) } == id) clearPending(event.profileId)
     }
 
     // ---- Personal dataset (exportable) ---------------------------------------
 
-    /** (#clips, totalBytes) currently stored on device. */
+    /** (#confirmed clips, totalBytes) for the active baby's exportable dataset. */
     suspend fun datasetInfo(): Pair<Int, Long> = withContext(Dispatchers.IO) {
-        clipStore.count() to clipStore.totalBytes()
+        val events = cryDao.confirmedEvents(activeProfileId()).filter { clipStore.hasClip(it.id) }
+        events.size to events.sumOf { clipStore.bytesFor(it.id) }
+    }
+
+    /** How many actual WAV recordings the full backup will include across all babies. */
+    suspend fun backupRecordingCount(): Int = withContext(Dispatchers.IO) {
+        cryDao.allEventsAllProfiles().count { clipStore.readClipBytes(it.id) != null }
     }
 
     /** Zips every confirmed clip + a labels.csv into [out]. Returns how many clips were written. */
@@ -966,7 +1024,7 @@ class CryRepository private constructor(
         tummyDao.clearAllProfiles()
         // Old clips are keyed by the previous event ids, which no longer match.
         clipStore.clearAll()
-        clearPending()
+        clearAllPending()
 
         var restored = 0
         val eventIdMap = HashMap<Long, Long>()
@@ -1087,6 +1145,10 @@ class CryRepository private constructor(
             colicConfirmed = profile.colicConfirmed,
         )
     }
+
+    private fun pendingIdKey(profileId: String): String = "$PENDING_ID:$profileId"
+
+    private fun pendingAtKey(profileId: String): String = "$PENDING_AT:$profileId"
 
     companion object {
         private const val PROFILE_NAME = "baby_name"

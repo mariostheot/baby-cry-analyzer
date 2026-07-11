@@ -86,8 +86,10 @@ fun SettingsScreen(
     val context = LocalContext.current
 
     var dataset by remember { mutableStateOf<Pair<Int, Long>?>(null) }
-    LaunchedEffect(Unit) {
+    var backupRecordings by remember { mutableStateOf(0) }
+    LaunchedEffect(profile.id, profiles, lastBackupAt) {
         dataset = viewModel.datasetInfo()
+        backupRecordings = viewModel.backupRecordingCount()
     }
 
     var name by remember(profile) { mutableStateOf(profile.name) }
@@ -364,9 +366,8 @@ fun SettingsScreen(
                 ActionRow(
                     Icons.Filled.Backup,
                     tr("Δημιουργία backup"),
-                    backupHealthText(lastBackupAt, dataset?.first ?: 0),
+                    backupHealthText(lastBackupAt, backupRecordings),
                     onBackup,
-                )
                 )
                 Divider(Modifier.padding(vertical = 4.dp))
                 ActionRow(
@@ -518,8 +519,8 @@ fun SettingsScreen(
 }
 
 private fun deleteBabyMessage(who: String): String = when (currentAppLang) {
-    AppLang.EN -> "Profile$who will be removed. Recorded cries/feedings will NOT be deleted."
-    AppLang.EL -> "Θα αφαιρεθεί το προφίλ$who. Τα καταγεγραμμένα κλάματα/ταΐσματα ΔΕΝ διαγράφονται."
+    AppLang.EN -> "Profile$who will be removed. Its cries, recordings, feedings, diaper changes, tummy time and learning examples will also be deleted."
+    AppLang.EL -> "Θα αφαιρεθεί το προφίλ$who. Θα διαγραφούν επίσης τα κλάματα, οι ηχογραφήσεις, τα ταΐσματα, οι πάνες, το tummy time και τα παραδείγματα εκμάθησης του."
 }
 
 @Composable

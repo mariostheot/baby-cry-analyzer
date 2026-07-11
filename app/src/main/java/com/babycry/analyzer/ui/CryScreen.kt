@@ -310,7 +310,7 @@ private fun TummyTimeCard(
                 )
                 Spacer(Modifier.size(10.dp))
                 Text(
-                    "Tummy Time",
+                    tr("Tummy Time"),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
