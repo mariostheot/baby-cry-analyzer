@@ -68,6 +68,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val language by viewModel.language.collectAsState()
     var confirmClear by remember { mutableStateOf(false) }
     var editEvent by remember { mutableStateOf<CryEvent?>(null) }
+    var pendingDelete by remember { mutableStateOf<CryEvent?>(null) }
 
     val now = System.currentTimeMillis()
     val cries = remember(events) { events.filter { it.cryDetected } }
@@ -139,7 +140,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                         event = line.e,
                         labels = labels,
                         onEdit = { editEvent = line.e },
-                        onDelete = { viewModel.deleteEvent(line.e.id) },
+                        onDelete = { pendingDelete = line.e },
                     )
                     is Line.Feed -> FeedRow(line.e)
                 }
@@ -155,7 +156,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
             onDismissRequest = { confirmClear = false },
             title = { Text(tr("Καθαρισμός ιστορικού;")) },
             text = {
-                Text(tr("Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα και τα ταΐσματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται."))
+                Text(tr("Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα, τα γραφήματα και τα ταΐσματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται."))
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -204,6 +205,25 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { editEvent = null }) { Text(tr("Κλείσιμο")) }
+            },
+        )
+    }
+
+    pendingDelete?.let { ev ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(tr("Διαγραφή κλάματος;")) },
+            text = {
+                Text(tr("Θα διαγραφεί οριστικά αυτή η καταγραφή κλάματος (και η ηχογράφησή της). Δεν μπορεί να αναιρεθεί."))
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteEvent(ev.id)
+                    pendingDelete = null
+                }) { Text(tr("Διαγραφή")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text(tr("Άκυρο")) }
             },
         )
     }

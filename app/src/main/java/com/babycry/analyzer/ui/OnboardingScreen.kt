@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -69,10 +70,10 @@ fun OnboardingScreen(
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            tr("Πες μου λίγα για το μωρό σου. Η ηλικία βοηθά την εφαρμογή να εκτιμά καλύτερα την αιτία του κλάματος (π.χ. πόσο συχνά πεινά ανάλογα με την ηλικία). Μπορείς να τα αλλάξεις όποτε θες από τις Ρυθμίσεις."),
+            tr("Συμπλήρωσε τα στοιχεία του μωρού σου. Η ηλικία βοηθά την εφαρμογή να εκτιμά καλύτερα την αιτία του κλάματος (π.χ. πόσο συχνά πεινά ανάλογα με την ηλικία). Μπορείς να τα αλλάξεις όποτε θες από τις Ρυθμίσεις."),
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
         )
 
         Spacer(Modifier.height(28.dp))
@@ -90,8 +91,8 @@ fun OnboardingScreen(
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = MaterialTheme.colorScheme.onSurface,
                 unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                focusedLabelColor = MaterialTheme.colorScheme.primary,
-                unfocusedLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                focusedLabelColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
                 cursorColor = MaterialTheme.colorScheme.primary,
             ),
@@ -109,7 +110,7 @@ fun OnboardingScreen(
                 Text(
                     birth?.let { dateFmt.format(Date(it)) } ?: tr("Δεν έχει οριστεί"),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                 )
             }
             OutlinedButton(onClick = { showPicker = true }) { Text(tr("Επιλογή")) }
@@ -128,8 +129,15 @@ fun OnboardingScreen(
     }
 
     if (showPicker) {
+        val todayMs = System.currentTimeMillis()
+        val nowYear = remember { java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) }
         val state = rememberDatePickerState(
-            initialSelectedDateMillis = birth ?: System.currentTimeMillis(),
+            initialSelectedDateMillis = birth ?: todayMs,
+            // A birth date can't be in the future.
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean = utcTimeMillis <= todayMs
+                override fun isSelectableYear(year: Int): Boolean = year <= nowYear
+            },
         )
         DatePickerDialog(
             onDismissRequest = { showPicker = false },

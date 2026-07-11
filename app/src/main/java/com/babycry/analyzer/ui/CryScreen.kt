@@ -32,12 +32,14 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +51,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -83,6 +86,7 @@ fun HomeScreen(
     val state by viewModel.home.collectAsState()
     val profile by viewModel.profile.collectAsState()
     val pending by viewModel.pendingConfirmation.collectAsState()
+    val soothing by viewModel.soothing.collectAsState()
 
     Column(
         modifier = modifier
@@ -107,6 +111,17 @@ fun HomeScreen(
                 text = "👶 " + profile.name + babyAgeSuffix(profile),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
+            )
+        }
+
+        // Mini-player: soothing sound keeps playing across screens, so surface a stop control
+        // right here instead of making the parent dig back into the Soothe screen.
+        if (soothing.playing != null) {
+            Spacer(Modifier.height(16.dp))
+            SoothingMiniPlayer(
+                state = soothing,
+                onStop = { viewModel.stopSoothing() },
+                onOpen = onSoothe,
             )
         }
 
@@ -139,6 +154,7 @@ fun HomeScreen(
                 canReplay = viewModel.canReplay,
                 onReplay = { viewModel.playLastRecording() },
                 onCorrect = { viewModel.confirmPredictionCorrect() },
+                onCorrectTo = { viewModel.correctTo(it) },
                 onDefer = { viewModel.deferFeedback() },
             )
             Spacer(Modifier.height(16.dp))
@@ -386,6 +402,60 @@ private fun rememberCyclingMessage(messages: List<String>): String {
     return messages[idx.coerceIn(0, messages.lastIndex)]
 }
 
+/**
+ * Compact "now playing" card for the soothing sound, shown on Home so the parent can see the
+ * remaining time and stop it with one tap without going back to the Soothe screen. Tapping the
+ * card body opens the full Soothe screen.
+ */
+@Composable
+private fun SoothingMiniPlayer(
+    state: SoothingUiState,
+    onStop: () -> Unit,
+    onOpen: () -> Unit,
+) {
+    val playing = state.playing ?: return
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpen() },
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+        ),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 14.dp, top = 8.dp, bottom = 8.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.GraphicEq,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            Spacer(Modifier.size(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "${playing.emoji} ${tr(playing.displayName)}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+                Text(
+                    if (state.remainingSec > 0)
+                        "${tr("Απομένει:")} ${"%d:%02d".format(state.remainingSec / 60, state.remainingSec % 60)}"
+                    else tr("Παίζει (χωρίς χρονικό όριο)"),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f),
+                )
+            }
+            FilledTonalIconButton(onClick = onStop) {
+                Icon(Icons.Filled.Stop, contentDescription = tr("Σταμάτα"))
+            }
+        }
+    }
+}
+
 @Composable
 private fun ResultCard(
     analysis: CryAnalysis,
@@ -394,6 +464,7 @@ private fun ResultCard(
     canReplay: Boolean,
     onReplay: () -> Unit,
     onCorrect: () -> Unit,
+    onCorrectTo: (CryReason) -> Unit,
     onDefer: () -> Unit,
 ) {
     val result = analysis.result
@@ -479,7 +550,11 @@ private fun ResultCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 )
-                else -> FeedbackSection(onCorrect = onCorrect, onDefer = onDefer)
+                else -> FeedbackSection(
+                    onCorrect = onCorrect,
+                    onCorrectTo = onCorrectTo,
+                    onDefer = onDefer,
+                )
             }
         }
     }
@@ -488,9 +563,35 @@ private fun ResultCard(
 @Composable
 private fun FeedbackSection(
     onCorrect: () -> Unit,
+    onCorrectTo: (CryReason) -> Unit,
     onDefer: () -> Unit,
 ) {
-    Text(tr("Ξέρεις ήδη γιατί έκλαψε;"), style = MaterialTheme.typography.labelLarge)
+    // When the parent knows the estimate was wrong, we reveal the reason chips so they can pick
+    // the real cause (this both fixes the stats and teaches the personalization engine).
+    var choosing by remember { mutableStateOf(false) }
+
+    if (choosing) {
+        Text(tr("Διάλεξε τη σωστή αιτία:"), style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.height(8.dp))
+        CryReason.canonicalOrder.chunked(2).forEach { pair ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                pair.forEach { reason ->
+                    OutlinedButton(
+                        onClick = { onCorrectTo(reason) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("${reason.emoji} ${tr(reason.displayName)}", maxLines = 1, fontSize = 12.sp)
+                    }
+                }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+        TextButton(onClick = { choosing = false }) { Text(tr("Πίσω")) }
+        return
+    }
+
+    Text(tr("Ήταν σωστή η εκτίμηση;"), style = MaterialTheme.typography.labelLarge)
     Spacer(Modifier.height(8.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(onClick = onCorrect, modifier = Modifier.weight(1f)) {
@@ -498,9 +599,13 @@ private fun FeedbackSection(
             Spacer(Modifier.size(6.dp))
             Text(tr("Ναι, σωστή"), maxLines = 1)
         }
-        OutlinedButton(onClick = onDefer, modifier = Modifier.weight(1f)) {
-            Text(tr("Δεν ξέρω ακόμα"), maxLines = 1)
+        OutlinedButton(onClick = { choosing = true }, modifier = Modifier.weight(1f)) {
+            Text(tr("Όχι, άλλη αιτία"), maxLines = 1)
         }
+    }
+    Spacer(Modifier.height(8.dp))
+    TextButton(onClick = onDefer, modifier = Modifier.fillMaxWidth()) {
+        Text(tr("Δεν ξέρω ακόμα"), maxLines = 1)
     }
     Spacer(Modifier.height(8.dp))
     Text(

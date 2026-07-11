@@ -14,7 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -36,12 +35,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,18 +66,13 @@ fun SettingsScreen(
     onExportReport: () -> Unit,
     onBackup: () -> Unit,
     onRestore: () -> Unit,
-    onExportDataset: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val profile by viewModel.profile.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
     val personalization by viewModel.personalizationEnabled.collectAsState()
-    val saveClips by viewModel.saveClipsEnabled.collectAsState()
     val language by viewModel.language.collectAsState()
     val focus = LocalFocusManager.current
-
-    var dataset by remember { mutableStateOf<Pair<Int, Long>?>(null) }
-    LaunchedEffect(saveClips) { dataset = viewModel.datasetInfo() }
 
     var name by remember(profile) { mutableStateOf(profile.name) }
     var birth by remember(profile) { mutableStateOf(profile.birthMillis) }
@@ -289,34 +283,6 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(20.dp))
 
-        // ---- Personal dataset ----
-        SectionTitle(tr("Δικό μου dataset"))
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
-                ToggleRow(
-                    title = tr("Αποθήκευση ηχογραφήσεων"),
-                    subtitle = tr("Κρατά τοπικά κάθε κλάμα μαζί με την αιτία, για να χτίσεις δικό σου dataset."),
-                    checked = saveClips,
-                    onCheckedChange = viewModel::setSaveClips,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    dataset?.let { (n, bytes) -> datasetInfoText(n, bytes) } ?: tr("Υπολογισμός..."),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                )
-                Divider(Modifier.padding(vertical = 8.dp))
-                ActionRow(
-                    Icons.Filled.Archive,
-                    tr("Εξαγωγή dataset (zip)"),
-                    tr("Εξάγει τις επιβεβαιωμένες ηχογραφήσεις + labels.csv για εκπαίδευση. Μένουν στη συσκευή σου."),
-                    onExportDataset,
-                )
-            }
-        }
-
-        Spacer(Modifier.height(20.dp))
-
         // ---- Personalization maintenance ----
         SectionTitle(tr("Προσωποποίηση (τι έμαθε από εσένα)"))
         Card(Modifier.fillMaxWidth()) {
@@ -356,8 +322,15 @@ fun SettingsScreen(
     }
 
     if (showPicker) {
+        val todayMs = System.currentTimeMillis()
+        val nowYear = remember { java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) }
         val state = rememberDatePickerState(
-            initialSelectedDateMillis = birth ?: System.currentTimeMillis(),
+            initialSelectedDateMillis = birth ?: todayMs,
+            // A birth date can't be in the future.
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean = utcTimeMillis <= todayMs
+                override fun isSelectableYear(year: Int): Boolean = year <= nowYear
+            },
         )
         DatePickerDialog(
             onDismissRequest = { showPicker = false },
@@ -426,20 +399,9 @@ fun SettingsScreen(
     }
 }
 
-private fun datasetInfoText(n: Int, bytes: Long): String = when (currentAppLang) {
-    AppLang.EN -> "Stored: $n recordings • ${formatBytes(bytes)}"
-    AppLang.EL -> "Αποθηκευμένα: $n ηχογραφήσεις • ${formatBytes(bytes)}"
-}
-
 private fun deleteBabyMessage(who: String): String = when (currentAppLang) {
     AppLang.EN -> "Profile$who will be removed. Recorded cries/feedings will NOT be deleted."
     AppLang.EL -> "Θα αφαιρεθεί το προφίλ$who. Τα καταγεγραμμένα κλάματα/ταΐσματα ΔΕΝ διαγράφονται."
-}
-
-private fun formatBytes(bytes: Long): String = when {
-    bytes >= 1_048_576L -> "%.1f MB".format(bytes / 1_048_576.0)
-    bytes >= 1024L -> "%.0f KB".format(bytes / 1024.0)
-    else -> "$bytes B"
 }
 
 @Composable

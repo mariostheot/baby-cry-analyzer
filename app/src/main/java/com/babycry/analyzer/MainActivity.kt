@@ -87,6 +87,7 @@ class MainActivity : ComponentActivity() {
 private enum class Tab(val label: String, val icon: ImageVector) {
     HOME("Αρχική", Icons.Filled.Mic),
     HISTORY("Ιστορικό", Icons.Filled.History),
+    LIBRARY("Ηχογραφήσεις", Icons.Filled.LibraryMusic),
     STATS("Στατιστικά", Icons.Filled.Insights),
 }
 
@@ -96,7 +97,6 @@ private enum class Overlay(val title: String) {
     REPORT("Αναφορά"),
     SOOTHE("Ηρέμησε το μωρό"),
     SAFETY("Πότε να ανησυχήσεις"),
-    LIBRARY("Αποθηκευμένα κλάματα"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -256,11 +256,6 @@ private fun AppRootContent(viewModel: CryViewModel) {
                                 onClick = { menuOpen = false; overlay = Overlay.SAFETY },
                             )
                             DropdownMenuItem(
-                                text = { Text(tr("Αποθηκευμένα κλάματα")) },
-                                leadingIcon = { Icon(Icons.Filled.LibraryMusic, contentDescription = null) },
-                                onClick = { menuOpen = false; overlay = Overlay.LIBRARY },
-                            )
-                            DropdownMenuItem(
                                 text = { Text(tr("Ρυθμίσεις")) },
                                 leadingIcon = { Icon(Icons.Filled.Settings, contentDescription = null) },
                                 onClick = { menuOpen = false; overlay = Overlay.SETTINGS },
@@ -295,13 +290,11 @@ private fun AppRootContent(viewModel: CryViewModel) {
                     onExportReport = { overlay = Overlay.REPORT },
                     onBackup = { backupLauncher.launch("baby-cry-backup.json") },
                     onRestore = { restoreLauncher.launch(arrayOf("application/json")) },
-                    onExportDataset = { datasetLauncher.launch("baby-cry-dataset.zip") },
                 )
                 overlay == Overlay.ABOUT -> AboutScreen()
                 overlay == Overlay.REPORT -> ReportScreen(viewModel)
                 overlay == Overlay.SOOTHE -> SootheScreen(viewModel)
                 overlay == Overlay.SAFETY -> SafetyScreen()
-                overlay == Overlay.LIBRARY -> LibraryScreen(viewModel)
                 tab == Tab.HOME -> HomeScreen(
                     viewModel = viewModel,
                     onListen = onListen,
@@ -310,6 +303,10 @@ private fun AppRootContent(viewModel: CryViewModel) {
                     onSafety = { overlay = Overlay.SAFETY },
                 )
                 tab == Tab.HISTORY -> HistoryScreen(viewModel)
+                tab == Tab.LIBRARY -> LibraryScreen(
+                    viewModel = viewModel,
+                    onExportDataset = { datasetLauncher.launch("baby-cry-dataset.zip") },
+                )
                 tab == Tab.STATS -> StatsScreen(viewModel)
             }
         }

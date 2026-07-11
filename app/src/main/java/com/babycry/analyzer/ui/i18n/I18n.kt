@@ -26,6 +26,7 @@ private val EN: Map<String, String> = mapOf(
     // ---- Navigation & app shell ----
     "Αρχική" to "Home",
     "Ιστορικό" to "History",
+    "Ηχογραφήσεις" to "Recordings",
     "Στατιστικά" to "Stats",
     "Ρυθμίσεις" to "Settings",
     "Σχετικά" to "About",
@@ -111,9 +112,12 @@ private val EN: Map<String, String> = mapOf(
     "Πάτησε μια καταγραφή για να ορίσεις/διορθώσεις την αιτία." to
         "Tap a record to set or correct the cause.",
     "Καθαρισμός ιστορικού;" to "Clear history?",
-    "Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα και τα ταΐσματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται." to
-        "All recorded cries and feedings will be deleted. What the model learned from you will NOT be affected.",
+    "Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα, τα γραφήματα και τα ταΐσματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται." to
+        "All recorded cries, charts, and feedings will be deleted. What the model learned from you will NOT be affected.",
     "Διαγραφή" to "Delete",
+    "Διαγραφή κλάματος;" to "Delete this cry?",
+    "Θα διαγραφεί οριστικά αυτή η καταγραφή κλάματος (και η ηχογράφησή της). Δεν μπορεί να αναιρεθεί." to
+        "This cry record (and its recording) will be permanently deleted. This can't be undone.",
     "Ποια ήταν η αιτία;" to "What was the cause?",
     "Διάλεξε τι ήταν τελικά. Ενημερώνονται τα στατιστικά και μαθαίνει το μοντέλο." to
         "Pick what it actually was. Stats update and the model learns.",
@@ -221,8 +225,8 @@ private val EN: Map<String, String> = mapOf(
 
     // ---- Onboarding ----
     "Καλώς ήρθες!" to "Welcome!",
-    "Πες μου λίγα για το μωρό σου. Η ηλικία βοηθά την εφαρμογή να εκτιμά καλύτερα την αιτία του κλάματος (π.χ. πόσο συχνά πεινά ανάλογα με την ηλικία). Μπορείς να τα αλλάξεις όποτε θες από τις Ρυθμίσεις." to
-        "Tell me a bit about your baby. Age helps the app better estimate the cause of crying (e.g. how often baby gets hungry by age). You can change this anytime in Settings.",
+    "Συμπλήρωσε τα στοιχεία του μωρού σου. Η ηλικία βοηθά την εφαρμογή να εκτιμά καλύτερα την αιτία του κλάματος (π.χ. πόσο συχνά πεινά ανάλογα με την ηλικία). Μπορείς να τα αλλάξεις όποτε θες από τις Ρυθμίσεις." to
+        "Fill in your baby's details. Age helps the app better estimate the cause of crying (e.g. how often baby gets hungry by age). You can change this anytime in Settings.",
     "Όνομα μωρού" to "Baby's name",
     "Ημερομηνία γέννησης" to "Date of birth",
     "Ξεκίνα" to "Get started",
@@ -339,7 +343,10 @@ private val EN: Map<String, String> = mapOf(
         "\"Why is Baby Crying?\" — Created by Mario Theotis. Informational aid, not medical advice.",
 
     // ---- Feedback (result card) ----
+    "Ήταν σωστή η εκτίμηση;" to "Was the estimate correct?",
     "Ναι, σωστή" to "Yes, correct",
+    "Όχι, άλλη αιτία" to "No, another reason",
+    "Διάλεξε τη σωστή αιτία:" to "Choose the correct reason:",
     "Δεν ξέρω ακόμα" to "Don't know yet",
     "Κανένα πρόβλημα — θα σε ρωτήσουμε ξανά σε λίγα λεπτά, μόλις καταλάβεις." to
         "No problem — we'll ask again in a few minutes, once you figure it out.",
@@ -356,8 +363,8 @@ private val EN: Map<String, String> = mapOf(
     "Αποθηκευμένα κλάματα" to "Saved cries",
     "Οι επιβεβαιωμένες ηχογραφήσεις με την αιτία τους. Πάτησε ▶ για να τις ακούσεις ξανά." to
         "Your confirmed recordings with their cause. Tap ▶ to play them again.",
-    "Δεν υπάρχουν ακόμη αποθηκευμένες ηχογραφήσεις. Μόλις επιβεβαιώσεις γιατί έκλαψε το μωρό, η ηχογράφηση αποθηκεύεται εδώ (εφόσον είναι ενεργή η «Αποθήκευση ηχογραφήσεων» στις Ρυθμίσεις)." to
-        "No saved recordings yet. Once you confirm why baby cried, the recording is saved here (as long as \"Save recordings\" is on in Settings).",
+    "Δεν υπάρχουν ακόμη αποθηκευμένες ηχογραφήσεις. Μόλις επιβεβαιώσεις γιατί έκλαψε το μωρό, η ηχογράφηση αποθηκεύεται εδώ (εφόσον είναι ενεργή η «Αποθήκευση ηχογραφήσεων» πιο πάνω)." to
+        "No saved recordings yet. Once you confirm why baby cried, the recording is saved here (as long as \"Save recordings\" is on above).",
 
     // ---- Feeding reminder (notification channel) ----
     "Υπενθυμίσεις ταΐσματος" to "Feeding reminders",
