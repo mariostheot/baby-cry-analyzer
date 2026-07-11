@@ -1188,7 +1188,9 @@ class CryRepository private constructor(
                 val newEventId = eventIdMap[oldEventId]
                 if (profileId.isNotBlank() && newEventId != null) {
                     val event = cryDao.byId(newEventId)
-                    if (event?.profileId == profileId && event.cryDetected && event.confirmedIndex == null) {
+                    if (event != null && event.profileId == profileId &&
+                        event.cryDetected && event.confirmedIndex == null
+                    ) {
                         setPending(newEventId, profileId)
                     }
                 }
