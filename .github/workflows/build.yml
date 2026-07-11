@@ -96,18 +96,20 @@ jobs:
       # phone install a new build straight over the old one (a normal update) WITHOUT
       # uninstalling, so personalization/history/profiles are preserved automatically.
       # The key lives only in the GitHub secret DEBUG_KEYSTORE_B64 (never committed).
-      # If the secret is missing the build still works, but with an ephemeral key.
+      # Do not fall back to an ephemeral key: such an APK cannot update a previously signed
+      # installation and would silently force an uninstall/data restore later.
       - name: Install stable debug signing key
         env:
           DEBUG_KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
         run: |
-          if [ -n "$DEBUG_KEYSTORE_B64" ]; then
-            mkdir -p ~/.android
-            printf '%s' "$DEBUG_KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
-            echo "Stable debug keystore installed ($(stat -c%s ~/.android/debug.keystore) bytes)."
-          else
-            echo "WARN: secret DEBUG_KEYSTORE_B64 not set -> ephemeral key; reinstalling may require uninstall."
+          if [ -z "$DEBUG_KEYSTORE_B64" ]; then
+            echo "::error::Missing DEBUG_KEYSTORE_B64. Refusing to produce an APK that cannot update existing installs."
+            exit 1
           fi
+          mkdir -p ~/.android
+          printf '%s' "$DEBUG_KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+          keytool -list -keystore ~/.android/debug.keystore -storepass android >/dev/null
+          echo "Stable debug keystore installed ($(stat -c%s ~/.android/debug.keystore) bytes)."
 
       # versionCode/versionName come from the CI run number so every build is a proper,
       # incrementing update (read by app/build.gradle.kts).
