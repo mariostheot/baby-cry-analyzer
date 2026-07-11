@@ -424,7 +424,7 @@ fun SettingsScreen(
                     birth = state.selectedDateMillis
                     justSaved = false
                     showPicker = false
-                }) { Text("OK") }
+                }) { Text(tr("Εντάξει")) }
             },
             dismissButton = {
                 TextButton(onClick = { showPicker = false }) { Text(tr("Άκυρο")) }

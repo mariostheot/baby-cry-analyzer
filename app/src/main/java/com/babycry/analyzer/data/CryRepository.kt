@@ -67,10 +67,26 @@ class CryRepository private constructor(
     fun recentDiapers(): Flow<List<DiaperEvent>> = diaperDao.recent()
     fun recentTummy(): Flow<List<TummyTimeEvent>> = tummyDao.recent()
 
+    fun isPersonalizationEnabled(): Boolean = profilePrefs.getBoolean(PERSONALIZATION_ON, true)
+
+    fun setPersonalizationEnabled(enabled: Boolean) {
+        profilePrefs.edit().putBoolean(PERSONALIZATION_ON, enabled).apply()
+    }
+
     /** Load stored feedback into the personalization engine (call once at startup). */
     suspend fun refreshPersonalization() = withContext(Dispatchers.Default) {
+        rebuildPersonalization()
+    }
+
+    /**
+     * Rebuild from the *current* feedback table only. This deliberately resets Tier 2 first, so
+     * deleted/restored/relabelled examples cannot leave old fine-tuned weights behind.
+     */
+    private suspend fun rebuildPersonalization() = withContext(Dispatchers.Default) {
         val all = feedbackDao.all()
+        analyzer.personalization.reset()
         analyzer.personalization.updatePrototypes(all)
+        analyzer.personalization.maybeTrain(all)
     }
 
     suspend fun analyze(
@@ -155,9 +171,7 @@ class CryRepository private constructor(
         }
         // Rebuild the personalization from the current (clean) set - covers both the added
         // corrected example and the case where we only removed a stale one.
-        val all = feedbackDao.all()
-        analyzer.personalization.updatePrototypes(all)
-        analyzer.personalization.maybeTrain(all)
+        rebuildPersonalization()
         if (pendingId() == eventId) clearPending()
     }
 
@@ -464,7 +478,9 @@ class CryRepository private constructor(
     /** Deletes a single cry event from the history (and its saved recording). */
     suspend fun deleteEvent(id: Long) = withContext(Dispatchers.IO) {
         cryDao.deleteById(id)
+        feedbackDao.deleteByEvent(id)
         clipStore.deleteClip(id)
+        rebuildPersonalization()
         if (pendingId() == id) clearPending()
     }
 
@@ -595,7 +611,12 @@ class CryRepository private constructor(
             sb.append("<div class=\"row\"><span>${trS("Ώρα αιχμής")}</span><span>$peakTxt</span></div>")
             sb.append("<div class=\"row\"><span>${trS("Πιο δύσκολη ημέρα")}</span><span>${esc(dowNames.getOrElse(busiestDow + 1) { "" })}</span></div>")
             if (avgFeedGapMs != null) {
-                val fg = "${avgFeedGapMs / 3_600_000L}h ${(avgFeedGapMs % 3_600_000L) / 60_000L}m"
+                val hours = avgFeedGapMs / 3_600_000L
+                val minutes = (avgFeedGapMs % 3_600_000L) / 60_000L
+                val fg = when (lang) {
+                    AppLang.EN -> "${hours}h ${minutes}m"
+                    AppLang.EL -> "${hours}ω ${minutes}λ"
+                }
                 sb.append("<div class=\"row\"><span>${trS("Μέσο διάστημα ταϊσμάτων")}</span><span>$fg</span></div>")
             }
 
@@ -686,7 +707,7 @@ class CryRepository private constructor(
             val doneToday = tummy.count { it.timestamp >= todayStart }
             val goal = tummyDailyGoal()
 
-            sb.append("<h2>${trS("Tummy time")}</h2>")
+            sb.append("<h2>${trS("Tummy Time")}</h2>")
             sb.append("<div class=\"row\"><span>${trS("Σύνολο συνεδριών")}</span><span>${tummy.size}</span></div>")
             sb.append("<div class=\"row\"><span>${trS("Μέσος όρος/ημέρα")}</span><span>${"%.1f".format(avgPerDay)}</span></div>")
             sb.append("<div class=\"row\"><span>${trS("Σήμερα")}</span><span>$doneToday / $goal</span></div>")
@@ -718,7 +739,7 @@ class CryRepository private constructor(
 
         // Table of recent events
         sb.append("<h2>${trS("Καταγραφές")} (${cries.size})</h2>")
-        sb.append("<table><tr><th>${trS("Ώρα")}</th><th>${trS("Αιτία")}</th><th>${trS("Βεβαιότητα")}</th><th>${trS("Feedback")}</th></tr>")
+        sb.append("<table><tr><th>${trS("Ώρα")}</th><th>${trS("Αιτία")}</th><th>${trS("Βεβαιότητα")}</th><th>${trS("Ανατροφοδότηση")}</th></tr>")
         for (e in cries.take(300)) {
             val pred = e.predictedIndex.takeIf { it in labels.indices }?.let { labels[it] }
             val predTxt = pred?.let { esc(it.emoji + " " + trS(it.displayName)) } ?: "—"
@@ -744,7 +765,7 @@ class CryRepository private constructor(
 
     suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
         val root = JSONObject()
-        root.put("version", 1)
+        root.put("version", 2)
         root.put("exportedAt", System.currentTimeMillis())
 
         val profile = getProfile()
@@ -769,6 +790,7 @@ class CryRepository private constructor(
         val eventsArr = JSONArray()
         for (e in cryDao.allEvents()) {
             eventsArr.put(JSONObject().apply {
+                put("id", e.id)
                 put("timestamp", e.timestamp)
                 put("cryDetected", e.cryDetected)
                 put("predictedIndex", e.predictedIndex)
@@ -779,6 +801,20 @@ class CryRepository private constructor(
             })
         }
         root.put("events", eventsArr)
+
+        val clipsArr = JSONArray()
+        for (e in cryDao.allEvents()) {
+            val wavBytes = clipStore.readClipBytes(e.id)
+            val embeddingBytes = clipStore.readEmbeddingBytes(e.id)
+            if (wavBytes != null || embeddingBytes != null) {
+                clipsArr.put(JSONObject().apply {
+                    put("eventId", e.id)
+                    wavBytes?.let { put("wav", Base64.encodeToString(it, Base64.NO_WRAP)) }
+                    embeddingBytes?.let { put("embedding", Base64.encodeToString(it, Base64.NO_WRAP)) }
+                })
+            }
+        }
+        root.put("clips", clipsArr)
 
         val fbArr = JSONArray()
         for (f in feedbackDao.all()) {
@@ -859,10 +895,11 @@ class CryRepository private constructor(
         clearPending()
 
         var restored = 0
+        val eventIdMap = HashMap<Long, Long>()
         root.optJSONArray("events")?.let { arr ->
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                cryDao.insert(
+                val newId = cryDao.insert(
                     CryEvent(
                         timestamp = o.getLong("timestamp"),
                         cryDetected = o.optBoolean("cryDetected", true),
@@ -873,18 +910,38 @@ class CryRepository private constructor(
                         gateScore = o.optDouble("gateScore", 0.0).toFloat(),
                     )
                 )
+                val oldId = o.optLong("id", 0L)
+                if (oldId > 0L) eventIdMap[oldId] = newId
                 restored++
+            }
+        }
+        root.optJSONArray("clips")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val oldEventId = o.optLong("eventId", 0L)
+                val newEventId = eventIdMap[oldEventId]
+                if (newEventId != null) {
+                    val wavBytes = o.optString("wav", "")
+                        .takeIf { it.isNotBlank() }
+                        ?.let { Base64.decode(it, Base64.NO_WRAP) }
+                    val embeddingBytes = o.optString("embedding", "")
+                        .takeIf { it.isNotBlank() }
+                        ?.let { Base64.decode(it, Base64.NO_WRAP) }
+                    clipStore.restoreClipBytes(newEventId, wavBytes, embeddingBytes)
+                }
             }
         }
         root.optJSONArray("feedback")?.let { arr ->
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
+                val oldSourceEventId = o.optLong("sourceEventId", 0L)
+                val restoredSourceEventId = eventIdMap[oldSourceEventId] ?: 0L
                 feedbackDao.insert(
                     FeedbackExample(
                         timestamp = o.getLong("timestamp"),
                         labelIndex = o.getInt("labelIndex"),
                         embedding = decodeFloats(o.getString("embedding")),
-                        sourceEventId = o.optLong("sourceEventId", 0L),
+                        sourceEventId = restoredSourceEventId,
                     )
                 )
             }
@@ -918,9 +975,7 @@ class CryRepository private constructor(
             }
         }
 
-        val all = feedbackDao.all()
-        analyzer.personalization.updatePrototypes(all)
-        analyzer.personalization.maybeTrain(all)
+        rebuildPersonalization()
         restored
     }
 
@@ -956,6 +1011,7 @@ class CryRepository private constructor(
         private const val PROFILES = "profiles_json"
         private const val ACTIVE_PROFILE = "active_profile_id"
         private const val ONBOARDING_DONE = "onboarding_done"
+        private const val PERSONALIZATION_ON = "personalization_on"
         private const val PENDING_ID = "pending_confirm_id"
         private const val PENDING_AT = "pending_confirm_at"
         private const val APP_LANG = "app_lang"

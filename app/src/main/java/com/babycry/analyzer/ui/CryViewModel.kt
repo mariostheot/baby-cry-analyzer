@@ -74,7 +74,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     private val _home = MutableStateFlow(HomeUiState())
     val home: StateFlow<HomeUiState> = _home.asStateFlow()
 
-    private val _personalizationEnabled = MutableStateFlow(true)
+    private val _personalizationEnabled = MutableStateFlow(repo.isPersonalizationEnabled())
     val personalizationEnabled: StateFlow<Boolean> = _personalizationEnabled.asStateFlow()
 
     private val _profile = MutableStateFlow(repo.getProfile())
@@ -507,6 +507,9 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val n = repo.importBackupJson(json)
                 refreshProfiles()
+                refreshPending()
+                scheduleFeedReminder()
+                scheduleTummyReminder()
                 _home.update { it.copy(message = restoreCompleteMessage(n)) }
             } catch (t: Throwable) {
                 _home.update {
@@ -525,6 +528,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setPersonalization(enabled: Boolean) {
+        repo.setPersonalizationEnabled(enabled)
         _personalizationEnabled.value = enabled
     }
 

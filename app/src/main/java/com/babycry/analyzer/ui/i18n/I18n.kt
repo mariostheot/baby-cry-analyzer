@@ -88,6 +88,7 @@ private val EN: Map<String, String> = mapOf(
     "Σχεδόν εκεί..." to "Almost there...",
     "Θα σταματήσω μόνο μου μόλις καταλάβω" to "I'll stop on my own once I understand",
     "Άκυρο" to "Cancel",
+    "Εντάξει" to "OK",
     "Αναλύω το κλάμα..." to "Analyzing the cry...",
     "Πάτα για να ακούσω το μωρό" to "Tap to listen to baby",
     "Αποτέλεσμα" to "Result",
@@ -362,7 +363,7 @@ private val EN: Map<String, String> = mapOf(
     "Καταγραφές" to "Records",
     "Ώρα" to "Time",
     "Αιτία" to "Cause",
-    "Feedback" to "Feedback",
+    "Ανατροφοδότηση" to "Feedback",
     "✓ σωστό" to "✓ correct",
     "Δημιουργήθηκε" to "Generated",
     "«Γιατί Κλαίει;» — Δημιουργήθηκε από τον Μάριο Θεοτή. Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή." to
@@ -407,6 +408,7 @@ private val EN: Map<String, String> = mapOf(
     "Κλάματα ανά ημέρα (τελευταίες 14)" to "Cries per day (last 14)",
 
     // ---- Tummy time: home card + logging ----
+    "Tummy Time" to "Tummy Time",
     "Οδηγός" to "Guide",
     "Έκανα Tummy Time" to "I did Tummy Time",
     "Καταγράφηκε το tummy time. Μπράβο!" to "Tummy time logged. Nice!",

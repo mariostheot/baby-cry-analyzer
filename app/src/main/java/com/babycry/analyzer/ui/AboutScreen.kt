@@ -33,7 +33,7 @@ fun AboutScreen(modifier: Modifier = Modifier) {
                 pi.longVersionCode else @Suppress("DEPRECATION") pi.versionCode.toLong()
             when (currentAppLang) {
                 AppLang.EN -> "Version ${pi.versionName} (build $code)"
-                AppLang.EL -> "Έκδοση ${pi.versionName} (build $code)"
+                AppLang.EL -> "Έκδοση ${pi.versionName} (κατασκευή $code)"
             }
         }.getOrDefault(
             when (currentAppLang) {

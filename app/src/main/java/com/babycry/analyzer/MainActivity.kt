@@ -1,6 +1,7 @@
 package com.babycry.analyzer
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -79,13 +80,27 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
+    private var openConfirmRequest by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        openConfirmRequest = intent?.getBooleanExtra(ConfirmReminder.EXTRA_OPEN_CONFIRM, false) == true
         setContent {
             BabyCryTheme {
-                AppRoot()
+                AppRoot(
+                    openConfirmRequest = openConfirmRequest,
+                    onOpenConfirmHandled = { openConfirmRequest = false },
+                )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra(ConfirmReminder.EXTRA_OPEN_CONFIRM, false)) {
+            openConfirmRequest = true
         }
     }
 }
@@ -108,19 +123,31 @@ private enum class Overlay(val title: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AppRoot() {
+private fun AppRoot(
+    openConfirmRequest: Boolean,
+    onOpenConfirmHandled: () -> Unit,
+) {
     val viewModel: CryViewModel = viewModel()
     val lang by viewModel.language.collectAsState()
     CompositionLocalProvider(LocalAppLang provides lang) {
-        AppRootContent(viewModel)
+        AppRootContent(
+            viewModel = viewModel,
+            openConfirmRequest = openConfirmRequest,
+            onOpenConfirmHandled = onOpenConfirmHandled,
+        )
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AppRootContent(viewModel: CryViewModel) {
+private fun AppRootContent(
+    viewModel: CryViewModel,
+    openConfirmRequest: Boolean,
+    onOpenConfirmHandled: () -> Unit,
+) {
     val pagerState = rememberPagerState(pageCount = { Tab.entries.size })
     var overlay by remember { mutableStateOf<Overlay?>(null) }
+    var reportReturnTo by remember { mutableStateOf<Overlay?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -211,6 +238,15 @@ private fun AppRootContent(viewModel: CryViewModel) {
         viewModel.scheduleTummyReminder()
     }
 
+    LaunchedEffect(openConfirmRequest, onboardingDone) {
+        if (openConfirmRequest && onboardingDone) {
+            overlay = null
+            pagerState.animateScrollToPage(Tab.HOME.ordinal)
+            viewModel.refreshPending()
+            onOpenConfirmHandled()
+        }
+    }
+
     val onListen: () -> Unit = {
         val granted = ContextCompat.checkSelfPermission(
             context, Manifest.permission.RECORD_AUDIO
@@ -226,7 +262,13 @@ private fun AppRootContent(viewModel: CryViewModel) {
         }
     }
 
-    BackHandler(enabled = overlay != null) { overlay = null }
+    fun closeOverlay() {
+        val returnTo = if (overlay == Overlay.REPORT) reportReturnTo else null
+        overlay = returnTo
+        if (returnTo == null) reportReturnTo = null
+    }
+
+    BackHandler(enabled = overlay != null) { closeOverlay() }
 
     if (!onboardingDone) {
         OnboardingScreen(
@@ -243,7 +285,7 @@ private fun AppRootContent(viewModel: CryViewModel) {
                 title = { Text(overlay?.let { tr(it.title) } ?: tr("Γιατί Κλαίει;")) },
                 navigationIcon = {
                     if (overlay != null) {
-                        IconButton(onClick = { overlay = null }) {
+                        IconButton(onClick = { closeOverlay() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = tr("Πίσω"))
                         }
                     }
@@ -307,7 +349,10 @@ private fun AppRootContent(viewModel: CryViewModel) {
                 when (ov) {
                     Overlay.SETTINGS -> SettingsScreen(
                         viewModel = viewModel,
-                        onExportReport = { overlay = Overlay.REPORT },
+                        onExportReport = {
+                            reportReturnTo = Overlay.SETTINGS
+                            overlay = Overlay.REPORT
+                        },
                         onBackup = { backupLauncher.launch("baby-cry-backup.json") },
                         onRestore = { restoreLauncher.launch(arrayOf("application/json")) },
                         onExportDataset = { datasetLauncher.launch("baby-cry-dataset.zip") },

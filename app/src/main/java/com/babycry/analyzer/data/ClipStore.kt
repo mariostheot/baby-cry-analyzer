@@ -53,6 +53,19 @@ class ClipStore(context: Context) {
         }.getOrNull()
     }
 
+    fun readClipBytes(eventId: Long): ByteArray? =
+        wav(eventId).takeIf { it.exists() }?.readBytes()
+
+    fun readEmbeddingBytes(eventId: Long): ByteArray? =
+        emb(eventId).takeIf { it.exists() }?.readBytes()
+
+    fun restoreClipBytes(eventId: Long, wavBytes: ByteArray?, embeddingBytes: ByteArray?) {
+        runCatching {
+            if (wavBytes != null) wav(eventId).writeBytes(wavBytes)
+            if (embeddingBytes != null) emb(eventId).writeBytes(embeddingBytes)
+        }
+    }
+
     /** Whether we still have the audio clip for this event. */
     fun hasClip(eventId: Long): Boolean = wav(eventId).exists()
 

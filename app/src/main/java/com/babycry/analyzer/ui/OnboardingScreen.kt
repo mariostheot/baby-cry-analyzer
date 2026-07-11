@@ -180,7 +180,7 @@ fun OnboardingScreen(
                 TextButton(onClick = {
                     birth = state.selectedDateMillis
                     showPicker = false
-                }) { Text("OK") }
+                }) { Text(tr("Εντάξει")) }
             },
             dismissButton = {
                 TextButton(onClick = { showPicker = false }) { Text(tr("Άκυρο")) }
