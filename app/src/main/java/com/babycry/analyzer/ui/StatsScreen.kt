@@ -204,7 +204,7 @@ private fun BabyDayTimelineCard(
     val todayStart = startOfToday()
     val items = buildList {
         cries.filter { it.timestamp >= todayStart }.forEach { add(TimelineDot(it.timestamp, "😢", tr("Κλάμα"))) }
-        feedings.filter { it.timestamp >= todayStart }.forEach { add(TimelineDot(it.timestamp, "🍼", tr("Τάισμα"))) }
+        feedings.filter { it.timestamp >= todayStart && it.durationMs >= 0L }.forEach { add(TimelineDot(it.timestamp, "🍼", tr("Τάισμα"))) }
         diapers.filter { it.timestamp >= todayStart }.forEach {
             val type = DiaperType.fromNameOrNull(it.type) ?: DiaperType.WET
             add(TimelineDot(it.timestamp, type.emoji, tr("Πάνα")))

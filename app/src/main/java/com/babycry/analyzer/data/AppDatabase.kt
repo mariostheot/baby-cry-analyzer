@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DiaperEvent::class,
         TummyTimeEvent::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -77,13 +77,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // v5 -> v6: retain the actual duration of a feeding session. Existing "fed now" markers
+        // get 0 (unknown duration); -1 is reserved for a timer that is currently running.
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE feeding_events ADD COLUMN durationMs INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "babycry.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+                ).addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                ).build()
                     .also { instance = it }
             }
     }

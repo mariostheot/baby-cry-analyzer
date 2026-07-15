@@ -294,6 +294,44 @@ class CryRepository private constructor(
         editor.apply()
     }
 
+    /** Starts one timed feeding session, or returns the one already running for this baby. */
+    suspend fun startFeeding(profileId: String = activeProfileId()): FeedingEvent = withContext(Dispatchers.IO) {
+        feedingDao.startIfNone(
+            FeedingEvent(
+                profileId = profileId,
+                timestamp = System.currentTimeMillis(),
+                durationMs = -1,
+            ),
+        )
+    }
+
+    /** Stops the currently running session and returns it with its measured duration. */
+    suspend fun stopFeeding(profileId: String = activeProfileId()): FeedingEvent? = withContext(Dispatchers.IO) {
+        val active = feedingDao.inProgress(profileId) ?: return@withContext null
+        val durationMs = (System.currentTimeMillis() - active.timestamp).coerceAtLeast(0L)
+        if (feedingDao.complete(active.id, profileId, durationMs) == 0) return@withContext null
+        active.copy(durationMs = durationMs)
+    }
+
+    /** Allows a parent to correct a completed session's start time and measured duration. */
+    suspend fun updateFeeding(
+        eventId: Long,
+        startedAt: Long,
+        durationMs: Long,
+        profileId: String = activeProfileId(),
+    ): Boolean = withContext(Dispatchers.IO) {
+        feedingDao.updateCompleted(
+            id = eventId,
+            profileId = profileId,
+            timestamp = startedAt,
+            durationMs = durationMs.coerceAtLeast(0L),
+        ) > 0
+    }
+
+    suspend fun activeFeeding(profileId: String = activeProfileId()): FeedingEvent? =
+        withContext(Dispatchers.IO) { feedingDao.inProgress(profileId) }
+
+    /** Kept for callers/imports that record a feed without a measured duration. */
     suspend fun logFeeding(note: String? = null) = withContext(Dispatchers.IO) {
         feedingDao.insert(FeedingEvent(profileId = activeProfileId(), timestamp = System.currentTimeMillis(), note = note))
     }
@@ -347,13 +385,20 @@ class CryRepository private constructor(
     }
 
     suspend fun hoursSinceLastFeed(): Float? = withContext(Dispatchers.IO) {
-        feedingDao.last(activeProfileId())?.let {
-            (System.currentTimeMillis() - it.timestamp) / 3_600_000f
+        // While a feed is underway the baby is, for the model's purpose, being fed "now".
+        // This keeps the hunger prior from rising based on the previous completed session.
+        if (feedingDao.inProgress(activeProfileId()) != null) return@withContext 0f
+        feedingDao.lastCompleted(activeProfileId())?.let {
+            (System.currentTimeMillis() - it.completedAt()) / 3_600_000f
         }
     }
 
-    suspend fun lastFeedTimestamp(profileId: String = activeProfileId()): Long? =
-        withContext(Dispatchers.IO) { feedingDao.last(profileId)?.timestamp }
+    suspend fun lastFeedTimestamp(profileId: String = activeProfileId()): Long? = withContext(Dispatchers.IO) {
+        // Also makes an alarm already being delivered harmless if the parent started feeding
+        // just as it fired.
+        if (feedingDao.inProgress(profileId) != null) null
+        else feedingDao.lastCompleted(profileId)?.completedAt()
+    }
 
     /**
      * When to fire the "feeding time is near" heads-up, as (delayFromNowMs, lastFeedTimestamp),
@@ -361,7 +406,10 @@ class CryRepository private constructor(
      * the age-appropriate feeding interval and warns [FeedReminder.LEAD_MINUTES] before it.
      */
     suspend fun feedReminderPlan(profileId: String = activeProfileId()): Pair<Long, Long>? = withContext(Dispatchers.IO) {
-        val last = feedingDao.last(profileId)?.timestamp ?: return@withContext null
+        // Never notify while a feeding timer is already running; stopping it will schedule the
+        // next reminder from the actual end of that session.
+        if (feedingDao.inProgress(profileId) != null) return@withContext null
+        val last = feedingDao.lastCompleted(profileId)?.completedAt() ?: return@withContext null
         val profile = profileById(profileId) ?: return@withContext null
         val intervalHours = com.babycry.analyzer.context.ContextPrior
             .expectedFeedIntervalHours(profile.ageMonths(), profile.ageDays())
@@ -370,6 +418,8 @@ class CryRepository private constructor(
         val delay = remindAt - System.currentTimeMillis()
         if (delay <= 0L) null else delay to last
     }
+
+    private fun FeedingEvent.completedAt(): Long = timestamp + durationMs.coerceAtLeast(0L)
 
     suspend fun resetPersonalization() = withContext(Dispatchers.Default) {
         feedbackDao.clear(activeProfileId())
@@ -616,6 +666,22 @@ class CryRepository private constructor(
         event?.profileId?.let { removePending(it, id) }
     }
 
+    /**
+     * Discards a fresh prediction when the parent immediately retries the same cry. Confirmed
+     * records are deliberately protected: only an unconfirmed event can be removed this way.
+     * Returns the owning profile so its scheduled confirmation alarm can be cancelled.
+     */
+    suspend fun discardUnconfirmedEvent(id: Long): String? = withContext(Dispatchers.IO) {
+        val event = cryDao.byId(id) ?: return@withContext null
+        if (event.confirmedIndex != null) return@withContext null
+        cryDao.deleteById(id)
+        feedbackDao.deleteByEvent(id)
+        clipStore.deleteClip(id)
+        val profileId = event.profileId.ifBlank { activeProfileId() }
+        removePending(profileId, id)
+        profileId
+    }
+
     // ---- Personal dataset (exportable) ---------------------------------------
 
     /** (#confirmed clips, totalBytes) for the active baby's exportable dataset. */
@@ -725,7 +791,10 @@ class CryRepository private constructor(
         val last7d = nowMs - 7L * 86_400_000L
         val cries24 = cries.count { it.timestamp >= last24h }
         val cries7 = cries.count { it.timestamp >= last7d }
-        val feeds24 = feedings.count { it.timestamp >= last24h }
+        val feeds24 = feedings.count { it.timestamp >= last24h && it.durationMs >= 0L }
+        val feedingDuration24 = feedings
+            .filter { it.timestamp >= last24h && it.durationMs > 0L }
+            .sumOf { it.durationMs }
         val diapers24 = diapers.count { it.timestamp >= last24h }
         val poops24 = diapers.count {
             it.timestamp >= last24h && DiaperType.fromNameOrNull(it.type)?.hasStool == true
@@ -736,6 +805,15 @@ class CryRepository private constructor(
         sb.append("<div class=\"row\"><span>${trS("Κλάματα τελευταίου 24ώρου")}</span><span>$cries24</span></div>")
         sb.append("<div class=\"row\"><span>${trS("Κλάματα τελευταίων 7 ημερών")}</span><span>$cries7</span></div>")
         sb.append("<div class=\"row\"><span>${trS("Ταΐσματα τελευταίου 24ώρου")}</span><span>$feeds24</span></div>")
+        if (feedingDuration24 > 0L) {
+            val feedHours = feedingDuration24 / 3_600_000L
+            val feedMinutes = (feedingDuration24 % 3_600_000L) / 60_000L
+            val feedDuration = when (lang) {
+                AppLang.EN -> "${feedHours}h ${feedMinutes}m"
+                AppLang.EL -> "${feedHours}ω ${feedMinutes}λ"
+            }
+            sb.append("<div class=\"row\"><span>${trS("Χρόνος ταΐσματος τελευταίου 24ώρου")}</span><span>$feedDuration</span></div>")
+        }
         sb.append("<div class=\"row\"><span>${trS("Πάνες τελευταίου 24ώρου")}</span><span>$diapers24 (${trS("κακά")}: $poops24)</span></div>")
         sb.append("<div class=\"row\"><span>${trS("Tummy time τελευταίου 24ώρου")}</span><span>$tummy24</span></div>")
         sb.append("<p class=\"note\">${trS("Αν υπάρχουν κόκκινες σημαίες (πυρετός, δυσκολία στην αναπνοή, αφυδάτωση, ασυνήθιστο/επίμονο κλάμα), επικοινώνησε άμεσα με γιατρό.")}</p>")
@@ -759,10 +837,17 @@ class CryRepository private constructor(
             val dowNames = java.text.DateFormatSymbols(
                 if (lang == AppLang.EN) Locale.ENGLISH else Locale("el"),
             ).weekdays
-            val avgFeedGapMs = if (feedings.size >= 2) {
-                var sum = 0L // feedings come DESC by timestamp
-                for (i in 0 until feedings.size - 1) sum += (feedings[i].timestamp - feedings[i + 1].timestamp)
-                sum / (feedings.size - 1)
+            // Sort by end time (start + duration) so edited/backfilled sessions don't produce
+            // negative gaps; the average gap is the mean distance between consecutive feed ends.
+            val completedEnds = feedings.filter { it.durationMs >= 0L }
+                .map { it.completedAt() }
+                .sortedDescending()
+            val avgFeedGapMs = if (completedEnds.size >= 2) {
+                var sum = 0L
+                for (i in 0 until completedEnds.size - 1) {
+                    sum += completedEnds[i] - completedEnds[i + 1]
+                }
+                sum / (completedEnds.size - 1)
             } else null
 
             sb.append("<h2>${trS("Συνολική εικόνα")}</h2>")
@@ -926,7 +1011,7 @@ class CryRepository private constructor(
 
     suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
         val root = JSONObject()
-        root.put("version", 3)
+        root.put("version", 4)
         root.put("exportedAt", System.currentTimeMillis())
 
         val profile = getProfile()
@@ -1004,6 +1089,7 @@ class CryRepository private constructor(
             feedArr.put(JSONObject().apply {
                 put("profileId", fe.profileId)
                 put("timestamp", fe.timestamp)
+                put("durationMs", fe.durationMs)
                 fe.note?.let { put("note", it) }
             })
         }
@@ -1152,6 +1238,7 @@ class CryRepository private constructor(
                     FeedingEvent(
                         profileId = o.optString("profileId", activeProfileId()),
                         timestamp = o.getLong("timestamp"),
+                        durationMs = o.optLong("durationMs", 0L),
                         note = if (o.has("note")) o.getString("note") else null,
                     )
                 )

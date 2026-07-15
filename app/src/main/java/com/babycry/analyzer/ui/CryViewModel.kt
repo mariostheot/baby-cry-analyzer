@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -64,6 +65,13 @@ data class PlaybackUiState(
     val paused: Boolean = false,
 )
 
+/** A timed feeding session for the currently selected baby. */
+data class FeedingUiState(
+    val eventId: Long? = null,
+    val startedAt: Long = 0,
+    val elapsedSeconds: Long = 0,
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class CryViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -72,6 +80,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     private val player = AudioPlayer()
     private val soother = SoothingPlayer()
     private var soothingJob: Job? = null
+    private var feedingJob: Job? = null
     private var lastWaveform: FloatArray? = null
 
     @Volatile
@@ -97,6 +106,9 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _playback = MutableStateFlow(PlaybackUiState())
     val playback: StateFlow<PlaybackUiState> = _playback.asStateFlow()
+
+    private val _feeding = MutableStateFlow(FeedingUiState())
+    val feeding: StateFlow<FeedingUiState> = _feeding.asStateFlow()
 
     private val _onboardingComplete = MutableStateFlow(repo.isOnboardingComplete())
     val onboardingComplete: StateFlow<Boolean> = _onboardingComplete.asStateFlow()
@@ -141,8 +153,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         currentAppLang = repo.getLanguage()
         viewModelScope.launch {
             refreshProfiles()
-            repo.refreshPersonalization()
-            refreshPendingNow()
+            refreshActiveProfileState()
         }
     }
 
@@ -161,8 +172,31 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun onListenTapped() {
         when (_home.value.phase) {
-            Phase.IDLE, Phase.RESULT -> startListening()
+            Phase.IDLE -> startListening()
+            Phase.RESULT -> retryListening()
             else -> Unit
+        }
+    }
+
+    /**
+     * The result is still on screen, so another Listen tap means "try that same cry again".
+     * Drop its unconfirmed event/clip and cancel its delayed question before recording anew.
+     * Confirmed history records are never removed by this shortcut.
+     */
+    private fun retryListening() {
+        val previous = _home.value
+        _home.update { it.copy(phase = Phase.ANALYZING, message = null) } // prevent double taps
+        viewModelScope.launch {
+            previous.eventId?.let { eventId ->
+                val profileId = repo.discardUnconfirmedEvent(eventId)
+                if (profileId != null) {
+                    ConfirmReminder.cancel(getApplication<Application>(), profileId, eventId)
+                }
+                if (_pending.value?.id == eventId) _pending.value = null
+            }
+            lastWaveform = null
+            refreshPendingNow()
+            startListening()
         }
     }
 
@@ -331,12 +365,62 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     suspend fun writeDatasetZip(out: OutputStream): Int = repo.writeDatasetZip(out)
 
-    fun logFeeding() {
+    /**
+     * The Home feeding button starts/stops one session for the selected baby. The session lives
+     * in Room from the first tap, so its timer can be restored after an app restart.
+     */
+    fun toggleFeeding() {
         viewModelScope.launch {
-            repo.logFeeding()
-            _home.update { it.copy(message = trS("Καταγράφηκε το τάισμα.")) }
-            scheduleFeedReminder()
+            val profileId = _profile.value.id
+            val active = repo.activeFeeding(profileId)
+            if (active == null) {
+                val started = repo.startFeeding(profileId)
+                FeedReminder.cancel(getApplication<Application>(), profileId)
+                startFeedingTimer(started)
+                _home.update { it.copy(message = trS("Άρχισε το τάισμα. Πάτησε ξανά όταν τελειώσει.")) }
+            } else {
+                val completed = repo.stopFeeding(profileId) ?: return@launch
+                stopFeedingTimer()
+                _home.update { it.copy(message = feedingCompleteMessage(completed.durationMs)) }
+                scheduleFeedReminder()
+            }
         }
+    }
+
+    fun updateFeeding(eventId: Long, startedAt: Long, durationMs: Long) {
+        viewModelScope.launch {
+            if (repo.updateFeeding(eventId, startedAt, durationMs)) {
+                _home.update { it.copy(message = trS("Ενημερώθηκε το τάισμα.")) }
+                scheduleFeedReminder()
+            }
+        }
+    }
+
+    private suspend fun refreshActiveFeeding() {
+        val active = repo.activeFeeding(_profile.value.id)
+        if (active == null) stopFeedingTimer() else startFeedingTimer(active)
+    }
+
+    private fun startFeedingTimer(event: FeedingEvent) {
+        feedingJob?.cancel()
+        fun currentState() = FeedingUiState(
+            eventId = event.id,
+            startedAt = event.timestamp,
+            elapsedSeconds = ((System.currentTimeMillis() - event.timestamp) / 1_000L).coerceAtLeast(0L),
+        )
+        _feeding.value = currentState()
+        feedingJob = viewModelScope.launch {
+            while (isActive && _feeding.value.eventId == event.id) {
+                _feeding.value = currentState()
+                delay(1_000L)
+            }
+        }
+    }
+
+    private fun stopFeedingTimer() {
+        feedingJob?.cancel()
+        feedingJob = null
+        _feeding.value = FeedingUiState()
     }
 
     fun logDiaper(type: DiaperType) {
@@ -573,6 +657,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun refreshActiveProfileState() {
         repo.refreshPersonalization()
         refreshPendingNow()
+        refreshActiveFeeding()
         scheduleFeedReminder()
         scheduleTummyReminder()
     }
@@ -594,6 +679,8 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
             repo.clearHistory()
             ConfirmReminder.cancelAllForProfile(getApplication<Application>(), profileId, pendingIds)
             _pending.value = null
+            refreshActiveFeeding()
+            scheduleFeedReminder()
             _home.update { it.copy(message = trS("Το ιστορικό & τα στατιστικά μηδενίστηκαν.")) }
         }
     }
@@ -633,10 +720,8 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
                 _tummyReminderEnabled.value = repo.isTummyReminderEnabled()
                 _tummyReminderHourAm.value = repo.tummyReminderHourAm()
                 _tummyReminderHourPm.value = repo.tummyReminderHourPm()
-                refreshPendingNow()
+                refreshActiveProfileState()
                 schedulePendingConfirmations()
-                scheduleFeedReminder()
-                scheduleTummyReminder()
                 _home.update { it.copy(message = restoreCompleteMessage(n)) }
             } catch (t: Throwable) {
                 _home.update {
@@ -685,6 +770,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         recorder.stop()
         player.stop()
         _playback.value = PlaybackUiState()
+        feedingJob?.cancel()
         soother.stop()
         super.onCleared()
     }
@@ -697,6 +783,16 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         private fun recordedMessage(reason: CryReason): String = when (currentAppLang) {
             AppLang.EN -> "Recorded: ${trS(reason.displayName)}. Thanks!"
             AppLang.EL -> "Καταγράφηκε: ${reason.displayName}. Ευχαριστώ!"
+        }
+
+        private fun feedingCompleteMessage(durationMs: Long): String {
+            val totalSeconds = (durationMs / 1_000L).coerceAtLeast(0L)
+            val minutes = totalSeconds / 60L
+            val seconds = totalSeconds % 60L
+            return when (currentAppLang) {
+                AppLang.EN -> "Feeding recorded: ${minutes}m ${seconds}s."
+                AppLang.EL -> "Καταγράφηκε τάισμα: ${minutes}λ ${seconds}δ."
+            }
         }
 
         private fun restoreCompleteMessage(n: Int): String = when (currentAppLang) {

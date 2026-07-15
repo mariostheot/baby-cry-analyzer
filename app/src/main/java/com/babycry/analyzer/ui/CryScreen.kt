@@ -100,6 +100,7 @@ fun HomeScreen(
     val pending by viewModel.pendingConfirmation.collectAsState()
     val soothing by viewModel.soothing.collectAsState()
     val playback by viewModel.playback.collectAsState()
+    val feeding by viewModel.feeding.collectAsState()
     val tummy by viewModel.recentTummy.collectAsState()
     var showDiaper by remember { mutableStateOf(false) }
 
@@ -184,9 +185,13 @@ fun HomeScreen(
         ) {
             QuickAction(
                 modifier = Modifier.weight(1f),
-                icon = Icons.Filled.Restaurant,
-                label = tr("Τάισμα"),
-                onClick = { viewModel.logFeeding() },
+                icon = if (feeding.eventId == null) Icons.Filled.Restaurant else Icons.Filled.Stop,
+                label = if (feeding.eventId == null) {
+                    tr("Έναρξη ταΐσματος")
+                } else {
+                    "${tr("Τέλος ταΐσματος")}\n${feedingDurationLabel(feeding.elapsedSeconds)}"
+                },
+                onClick = { viewModel.toggleFeeding() },
             )
             QuickAction(
                 modifier = Modifier.weight(1f),
@@ -280,6 +285,12 @@ private fun QuickAction(
             )
         }
     }
+}
+
+private fun feedingDurationLabel(totalSeconds: Long): String {
+    val minutes = (totalSeconds.coerceAtLeast(0L) / 60L)
+    val seconds = totalSeconds.coerceAtLeast(0L) % 60L
+    return "%d:%02d".format(minutes, seconds)
 }
 
 /**

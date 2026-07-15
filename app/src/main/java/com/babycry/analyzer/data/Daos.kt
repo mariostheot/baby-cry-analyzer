@@ -3,6 +3,7 @@ package com.babycry.analyzer.data
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -78,8 +79,35 @@ interface FeedingDao {
     @Insert
     suspend fun insert(event: FeedingEvent): Long
 
-    @Query("SELECT * FROM feeding_events WHERE profileId = :profileId ORDER BY timestamp DESC LIMIT 1")
-    suspend fun last(profileId: String): FeedingEvent?
+    /** Atomically preserves one running feeding timer per baby, even on rapid repeated taps. */
+    @Transaction
+    suspend fun startIfNone(event: FeedingEvent): FeedingEvent =
+        inProgress(event.profileId) ?: event.copy(id = insert(event))
+
+    // Ordered by when the feed *ended* (start + duration), so an edited/backfilled session that
+    // started earlier but ended later is still treated as the most recent feed.
+    @Query(
+        "SELECT * FROM feeding_events WHERE profileId = :profileId AND durationMs >= 0 " +
+            "ORDER BY (timestamp + durationMs) DESC LIMIT 1",
+    )
+    suspend fun lastCompleted(profileId: String): FeedingEvent?
+
+    @Query("SELECT * FROM feeding_events WHERE profileId = :profileId AND durationMs = -1 ORDER BY timestamp DESC LIMIT 1")
+    suspend fun inProgress(profileId: String): FeedingEvent?
+
+    @Query("UPDATE feeding_events SET durationMs = :durationMs WHERE id = :id AND profileId = :profileId AND durationMs = -1")
+    suspend fun complete(id: Long, profileId: String, durationMs: Long): Int
+
+    @Query(
+        "UPDATE feeding_events SET timestamp = :timestamp, durationMs = :durationMs " +
+            "WHERE id = :id AND profileId = :profileId AND durationMs >= 0",
+    )
+    suspend fun updateCompleted(
+        id: Long,
+        profileId: String,
+        timestamp: Long,
+        durationMs: Long,
+    ): Int
 
     @Query("SELECT * FROM feeding_events WHERE profileId = :profileId ORDER BY timestamp DESC LIMIT :limit")
     fun recent(profileId: String, limit: Int = 200): Flow<List<FeedingEvent>>

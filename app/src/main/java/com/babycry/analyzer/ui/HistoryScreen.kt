@@ -2,6 +2,7 @@ package com.babycry.analyzer.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.babycry.analyzer.context.ContextPrior
 import com.babycry.analyzer.data.CryEvent
@@ -75,6 +78,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val language by viewModel.language.collectAsState()
     var confirmClear by remember { mutableStateOf(false) }
     var editEvent by remember { mutableStateOf<CryEvent?>(null) }
+    var editFeeding by remember { mutableStateOf<FeedingEvent?>(null) }
     var pendingDelete by remember { mutableStateOf<CryEvent?>(null) }
 
     val now = System.currentTimeMillis()
@@ -122,7 +126,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                 Column(Modifier.padding(top = 8.dp)) {
                     Text(tr("Χρονολόγιο"), style = MaterialTheme.typography.titleLarge)
                     Text(
-                        tr("Πάτησε μια καταγραφή για να ορίσεις/διορθώσεις την αιτία."),
+                        tr("Πάτησε μια καταγραφή για να διορθώσεις την αιτία ή τη διάρκεια ταΐσματος."),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
@@ -153,7 +157,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                         onEdit = { editEvent = line.e },
                         onDelete = { pendingDelete = line.e },
                     )
-                    is Line.Feed -> FeedRow(line.e)
+                    is Line.Feed -> FeedRow(line.e, onEdit = { editFeeding = line.e })
                     is Line.Diaper -> DiaperRow(line.e)
                     is Line.Tummy -> TummyRow(line.e)
                 }
@@ -222,6 +226,105 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
         )
     }
 
+    editFeeding?.let { feeding ->
+        val isRunning = feeding.durationMs < 0L
+        val initialSeconds = feeding.durationMs.coerceAtLeast(0L) / 1_000L
+        val initialTime = Calendar.getInstance().apply { timeInMillis = feeding.timestamp }
+        var hourText by remember(feeding.id, feeding.timestamp) {
+            mutableStateOf(initialTime.get(Calendar.HOUR_OF_DAY).toString())
+        }
+        var startMinuteText by remember(feeding.id, feeding.timestamp) {
+            mutableStateOf(initialTime.get(Calendar.MINUTE).toString())
+        }
+        var minutesText by remember(feeding.id, feeding.durationMs) {
+            mutableStateOf((initialSeconds / 60L).toString())
+        }
+        var secondsText by remember(feeding.id, feeding.durationMs) {
+            mutableStateOf((initialSeconds % 60L).toString())
+        }
+        val hour = hourText.toIntOrNull()?.takeIf { it in 0..23 }
+        val startMinute = startMinuteText.toIntOrNull()?.takeIf { it in 0..59 }
+        val minutes = minutesText.toLongOrNull()?.coerceIn(0L, 1_440L) ?: 0L
+        val seconds = secondsText.toLongOrNull()?.coerceIn(0L, 59L) ?: 0L
+        val durationMs = (minutes * 60L + seconds) * 1_000L
+        val updatedStartedAt = Calendar.getInstance().apply {
+            timeInMillis = feeding.timestamp
+            set(Calendar.HOUR_OF_DAY, hour ?: get(Calendar.HOUR_OF_DAY))
+            set(Calendar.MINUTE, startMinute ?: get(Calendar.MINUTE))
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        AlertDialog(
+            onDismissRequest = { editFeeding = null },
+            title = { Text(tr("Επεξεργασία ταΐσματος")) },
+            text = {
+                if (isRunning) {
+                    Text(
+                        tr("Το τάισμα είναι σε εξέλιξη") + ". " +
+                            tr("Πάτησε το κουμπί στην αρχική για να το σταματήσεις."),
+                    )
+                } else {
+                    Column {
+                        Text(tr("Ώρα έναρξης"), style = MaterialTheme.typography.labelLarge)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = hourText,
+                                onValueChange = { hourText = it.filter { char -> char.isDigit() }.take(2) },
+                                label = { Text(tr("Ώρα")) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                            )
+                            OutlinedTextField(
+                                value = startMinuteText,
+                                onValueChange = { startMinuteText = it.filter { char -> char.isDigit() }.take(2) },
+                                label = { Text(tr("Λεπτά")) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Text(tr("Διάρκεια ταΐσματος"), style = MaterialTheme.typography.labelLarge)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = minutesText,
+                                onValueChange = { minutesText = it.filter { char -> char.isDigit() }.take(4) },
+                                label = { Text(tr("Λεπτά")) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                            )
+                            OutlinedTextField(
+                                value = secondsText,
+                                onValueChange = { secondsText = it.filter { char -> char.isDigit() }.take(2) },
+                                label = { Text(tr("Δευτερόλεπτα")) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (!isRunning) {
+                    TextButton(
+                        onClick = {
+                            viewModel.updateFeeding(feeding.id, updatedStartedAt, durationMs)
+                            editFeeding = null
+                        },
+                        enabled = hour != null && startMinute != null && durationMs > 0L,
+                    ) { Text(tr("Αποθήκευση")) }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editFeeding = null }) { Text(tr("Κλείσιμο")) }
+            },
+        )
+    }
+
     pendingDelete?.let { ev ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
@@ -250,8 +353,12 @@ private fun LiveTiles(s: HistorySummary) {
             modifier = Modifier.weight(1f),
             emoji = "🍼",
             title = tr("Τελευταίο τάισμα"),
-            big = s.lastFeedAgoMs?.let(::relativeAgo) ?: "—",
+            big = when {
+                s.feedingNow -> tr("τώρα")
+                else -> s.lastFeedAgoMs?.let(::relativeAgo) ?: "—"
+            },
             subtitle = when {
+                s.feedingNow -> tr("ταΐζεται τώρα")
                 s.lastFeedAgoMs == null -> tr("δεν έχει καταγραφεί")
                 s.nextFeedInMs == null -> ""
                 overdue -> tr("ίσως πεινάει")
@@ -414,9 +521,25 @@ private fun correctionLabel(confirmed: CryReason): String = when (currentAppLang
 }
 
 @Composable
-private fun FeedRow(feeding: FeedingEvent) {
+private fun FeedRow(feeding: FeedingEvent, onEdit: () -> Unit) {
+    val startTime = timeFormat().format(Date(feeding.timestamp))
+    val title = when {
+        feeding.durationMs < 0L -> "${tr("Τάισμα")} · ${tr("Το τάισμα είναι σε εξέλιξη")}"
+        feeding.durationMs > 0L -> "${tr("Τάισμα")} · ${feedingDurationText(feeding.durationMs)}"
+        else -> tr("Τάισμα")
+    }
+    val timeRange = when {
+        feeding.durationMs < 0L -> startTime
+        feeding.durationMs > 0L -> {
+            val endTime = timeFormat().format(Date(feeding.timestamp + feeding.durationMs))
+            "$startTime – $endTime"
+        }
+        else -> startTime
+    }
     Card(
-        Modifier.fillMaxWidth(),
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onEdit),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f),
         ),
@@ -428,13 +551,26 @@ private fun FeedRow(feeding: FeedingEvent) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("🍼  ${tr("Τάισμα")}", style = MaterialTheme.typography.bodyLarge)
-            Text(
-                timeFormat().format(Date(feeding.timestamp)),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            )
+            Column {
+                Text("🍼  $title", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    timeRange,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun feedingDurationText(durationMs: Long): String {
+    val totalSeconds = (durationMs / 1_000L).coerceAtLeast(0L)
+    val minutes = totalSeconds / 60L
+    val seconds = totalSeconds % 60L
+    return when (currentAppLang) {
+        AppLang.EN -> if (seconds == 0L) "$minutes min" else "$minutes min $seconds sec"
+        AppLang.EL -> if (seconds == 0L) "$minutes λεπτά" else "$minutes λεπτά $seconds δευτ."
     }
 }
 
@@ -651,6 +787,7 @@ private sealed interface Line {
 }
 
 private data class HistorySummary(
+    val feedingNow: Boolean,
     val lastFeedAgoMs: Long?,
     val nextFeedInMs: Long?,
     val lastCryAgoMs: Long?,
@@ -688,7 +825,13 @@ private fun computeSummary(
     val dayMs = 86_400_000L
     val todayStart = startOfDay(now)
 
-    val lastFeed = feedings.firstOrNull()?.timestamp
+    // A currently running feed should not reset the hunger clock until it actually ends. While
+    // one is running we treat the baby as "just fed" (no next-feed countdown yet).
+    val feedingNow = feedings.any { it.durationMs < 0L }
+    val completedFeedings = feedings.filter { it.durationMs >= 0L }
+    // Order by end time (start + duration), so an edited session that started earlier but ended
+    // later still counts as the most recent feed.
+    val lastFeed = if (feedingNow) null else completedFeedings.maxOfOrNull(::feedingEndedAt)
     val expectedHours = ContextPrior.expectedFeedIntervalHours(profile.ageMonths(now), profile.ageDays(now))
     val nextFeedInMs = lastFeed?.let { it + (expectedHours * 3_600_000L).toLong() - now }
 
@@ -711,10 +854,13 @@ private fun computeSummary(
     for (i in todayCounts.indices) if (todayCounts[i] > 0 && (topTodayIdx < 0 || todayCounts[i] > todayCounts[topTodayIdx])) topTodayIdx = i
     val topReasonToday = topTodayIdx.takeIf { it >= 0 }?.let { labels[it] }
 
-    val avgFeedGapMs = if (feedings.size >= 2) {
+    val feedEndsDesc = completedFeedings.map(::feedingEndedAt).sortedDescending()
+    val avgFeedGapMs = if (feedEndsDesc.size >= 2) {
         var sum = 0L
-        for (i in 0 until feedings.size - 1) sum += (feedings[i].timestamp - feedings[i + 1].timestamp)
-        sum / (feedings.size - 1)
+        for (i in 0 until feedEndsDesc.size - 1) {
+            sum += feedEndsDesc[i] - feedEndsDesc[i + 1]
+        }
+        sum / (feedEndsDesc.size - 1)
     } else null
 
     val perDay = (6 downTo 0).map { back ->
@@ -734,13 +880,14 @@ private fun computeSummary(
     }
 
     return HistorySummary(
+        feedingNow = feedingNow,
         lastFeedAgoMs = lastFeed?.let { now - it },
         nextFeedInMs = nextFeedInMs,
         lastCryAgoMs = lastCry?.let { now - it.timestamp },
         lastCryReason = lastCry?.let { reasonOf(it, labels) },
         criesToday = cries.count { it.timestamp >= todayStart },
         criesYesterday = cries.count { it.timestamp in (todayStart - dayMs) until todayStart },
-        feedsToday = feedings.count { it.timestamp >= todayStart },
+        feedsToday = completedFeedings.count { it.timestamp >= todayStart },
         diapersToday = diapers.count { it.timestamp >= todayStart },
         poopsToday = diapers.count {
             it.timestamp >= todayStart && DiaperType.fromNameOrNull(it.type)?.hasStool == true
@@ -756,6 +903,9 @@ private fun computeSummary(
         perHour = perHour.toList(),
     )
 }
+
+private fun feedingEndedAt(feeding: FeedingEvent): Long =
+    feeding.timestamp + feeding.durationMs.coerceAtLeast(0L)
 
 private fun buildTimeline(
     cries: List<CryEvent>,

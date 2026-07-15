@@ -46,12 +46,17 @@ data class FeedbackExample(
     override fun hashCode(): Int = id.hashCode()
 }
 
-/** A "fed now" marker used by the context prior (hours-since-feed -> hunger likelihood). */
+/**
+ * One feeding session. [timestamp] is when feeding began; [durationMs] is its actual length.
+ * A value of -1 means the parent has started a timer but has not stopped it yet; 0 means a
+ * legacy/manual marker whose length is unknown.
+ */
 @Entity(tableName = "feeding_events")
 data class FeedingEvent(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(defaultValue = "") val profileId: String = "",
     val timestamp: Long,
+    @ColumnInfo(defaultValue = "0") val durationMs: Long = 0,
     val note: String? = null,
 )
 
