@@ -185,8 +185,9 @@ fun OnboardingScreen(
         val todayMs = System.currentTimeMillis()
         val nowYear = remember { java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) }
         val baseContext = LocalContext.current
-        val dmyConfig = remember(currentAppLang) {
-            Configuration(LocalConfiguration.current).apply {
+        val configuration = LocalConfiguration.current
+        val dmyConfig = remember(currentAppLang, configuration) {
+            Configuration(configuration).apply {
                 setLocale(if (currentAppLang == AppLang.EL) Locale("el", "GR") else Locale.UK)
             }
         }
