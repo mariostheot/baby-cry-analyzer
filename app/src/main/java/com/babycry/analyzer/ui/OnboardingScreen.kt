@@ -1,5 +1,6 @@
 package com.babycry.analyzer.ui
 
+import android.content.res.Configuration
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,12 +29,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -180,27 +184,38 @@ fun OnboardingScreen(
     if (showPicker) {
         val todayMs = System.currentTimeMillis()
         val nowYear = remember { java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) }
-        val state = rememberDatePickerState(
-            initialSelectedDateMillis = birth ?: todayMs,
-            // A birth date can't be in the future.
-            selectableDates = object : SelectableDates {
-                override fun isSelectableDate(utcTimeMillis: Long): Boolean = utcTimeMillis <= todayMs
-                override fun isSelectableYear(year: Int): Boolean = year <= nowYear
-            },
-        )
-        DatePickerDialog(
-            onDismissRequest = { showPicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    birth = state.selectedDateMillis
-                    showPicker = false
-                }) { Text(tr("Εντάξει")) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPicker = false }) { Text(tr("Άκυρο")) }
-            },
+        val baseContext = LocalContext.current
+        val dmyConfig = remember(currentAppLang) {
+            Configuration(LocalConfiguration.current).apply {
+                setLocale(if (currentAppLang == AppLang.EL) Locale("el", "GR") else Locale.UK)
+            }
+        }
+        CompositionLocalProvider(
+            LocalContext provides baseContext.createConfigurationContext(dmyConfig),
+            LocalConfiguration provides dmyConfig,
         ) {
-            DatePicker(state = state)
+            val state = rememberDatePickerState(
+                initialSelectedDateMillis = birth ?: todayMs,
+                // A birth date can't be in the future.
+                selectableDates = object : SelectableDates {
+                    override fun isSelectableDate(utcTimeMillis: Long): Boolean = utcTimeMillis <= todayMs
+                    override fun isSelectableYear(year: Int): Boolean = year <= nowYear
+                },
+            )
+            DatePickerDialog(
+                onDismissRequest = { showPicker = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        birth = state.selectedDateMillis
+                        showPicker = false
+                    }) { Text(tr("Εντάξει")) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showPicker = false }) { Text(tr("Άκυρο")) }
+                },
+            ) {
+                DatePicker(state = state)
+            }
         }
     }
 }
