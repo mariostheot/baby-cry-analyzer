@@ -110,10 +110,23 @@ jobs:
             echo "::error::Missing DEBUG_KEYSTORE_B64. Refusing to produce an APK that cannot update existing installs."
             exit 1
           fi
-          mkdir -p ~/.android
-          printf '%s' "$DEBUG_KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
-          keytool -list -keystore ~/.android/debug.keystore -storepass android >/dev/null
-          echo "Stable debug keystore installed ($(stat -c%s ~/.android/debug.keystore) bytes)."
+          KEYSTORE_PATH="$RUNNER_TEMP/babycry-debug.keystore"
+          printf '%s' "$DEBUG_KEYSTORE_B64" | base64 -d > "$KEYSTORE_PATH"
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass android >/dev/null
+          KEY_ALIAS="$(keytool -list -v -keystore "$KEYSTORE_PATH" -storepass android | awk -F': ' '/Alias name:/{print $2; exit}')"
+          SIGNING_SHA256="$(keytool -list -v -keystore "$KEYSTORE_PATH" -storepass android -alias "$KEY_ALIAS" | awk -F': ' '/SHA256:/{print $2; exit}')"
+          if [ -z "$KEY_ALIAS" ] || [ -z "$SIGNING_SHA256" ]; then
+            echo "::error::Could not read the stable keystore alias or SHA-256 certificate fingerprint."
+            exit 1
+          fi
+          {
+            echo "DEBUG_KEYSTORE_PATH=$KEYSTORE_PATH"
+            echo "DEBUG_KEYSTORE_PASSWORD=android"
+            echo "DEBUG_KEY_ALIAS=$KEY_ALIAS"
+            echo "DEBUG_KEY_PASSWORD=android"
+            echo "SIGNING_SHA256=$SIGNING_SHA256"
+          } >> "$GITHUB_ENV"
+          echo "Stable signing certificate SHA-256: $SIGNING_SHA256"
 
       # versionCode/versionName come from the CI run number so every build is a proper,
       # incrementing update (read by app/build.gradle.kts).
@@ -122,6 +135,17 @@ jobs:
           VERSION_CODE: ${{ github.run_number }}
           VERSION_NAME: 1.0.${{ github.run_number }}
         run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Verify APK signing certificate
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          APK_SHA256="$("$APKSIGNER" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}')"
+          if [ -z "$APK_SHA256" ] || [ "$APK_SHA256" != "$SIGNING_SHA256" ]; then
+            echo "::error::APK certificate fingerprint does not match the stable signing keystore."
+            exit 1
+          fi
+          echo "Verified APK signing certificate SHA-256: $APK_SHA256"
 
       - name: Run YAMNet parity test
         if: ${{ hashFiles('app/src/androidTest/assets/parity_sample.wav') != '' }}

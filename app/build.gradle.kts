@@ -29,6 +29,19 @@ android {
         }
     }
 
+    // CI supplies this exact path from DEBUG_KEYSTORE_B64. Keeping it explicit avoids any
+    // reliance on the Android Gradle Plugin's default debug-keystore lookup path.
+    signingConfigs {
+        getByName("debug") {
+            System.getenv("DEBUG_KEYSTORE_PATH")?.let { ciKeystore ->
+                storeFile = file(ciKeystore)
+                storePassword = System.getenv("DEBUG_KEYSTORE_PASSWORD") ?: "android"
+                keyAlias = System.getenv("DEBUG_KEY_ALIAS") ?: "androiddebugkey"
+                keyPassword = System.getenv("DEBUG_KEY_PASSWORD") ?: "android"
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
