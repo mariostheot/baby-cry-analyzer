@@ -84,3 +84,17 @@ data class TummyTimeEvent(
     @ColumnInfo(defaultValue = "") val profileId: String = "",
     val timestamp: Long,
 )
+
+/**
+ * One nap/sleep session. [timestamp] is when sleep began; [durationMs] is its actual length.
+ * A value of -1 means the parent has started a timer but has not stopped it yet; 0 means a
+ * legacy/manual marker whose length is unknown.
+ */
+@Entity(tableName = "sleep_events")
+data class SleepEvent(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(defaultValue = "") val profileId: String = "",
+    val timestamp: Long,
+    @ColumnInfo(defaultValue = "0") val durationMs: Long = 0,
+    val note: String? = null,
+)

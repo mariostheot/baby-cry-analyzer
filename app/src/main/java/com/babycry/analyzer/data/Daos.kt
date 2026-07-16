@@ -197,3 +197,55 @@ interface TummyDao {
     @Query("DELETE FROM tummy_events")
     suspend fun clearAllProfiles()
 }
+
+@Dao
+interface SleepDao {
+    @Insert
+    suspend fun insert(event: SleepEvent): Long
+
+    /** Atomically preserves one running sleep timer per baby, even on rapid repeated taps. */
+    @Transaction
+    suspend fun startIfNone(event: SleepEvent): SleepEvent =
+        inProgress(event.profileId) ?: event.copy(id = insert(event))
+
+    @Query(
+        "SELECT * FROM sleep_events WHERE profileId = :profileId AND durationMs >= 0 " +
+            "ORDER BY (timestamp + durationMs) DESC LIMIT 1",
+    )
+    suspend fun lastCompleted(profileId: String): SleepEvent?
+
+    @Query("SELECT * FROM sleep_events WHERE profileId = :profileId AND durationMs = -1 ORDER BY timestamp DESC LIMIT 1")
+    suspend fun inProgress(profileId: String): SleepEvent?
+
+    @Query("UPDATE sleep_events SET durationMs = :durationMs WHERE id = :id AND profileId = :profileId AND durationMs = -1")
+    suspend fun complete(id: Long, profileId: String, durationMs: Long): Int
+
+    @Query(
+        "UPDATE sleep_events SET timestamp = :timestamp, durationMs = :durationMs " +
+            "WHERE id = :id AND profileId = :profileId AND durationMs >= 0",
+    )
+    suspend fun updateCompleted(
+        id: Long,
+        profileId: String,
+        timestamp: Long,
+        durationMs: Long,
+    ): Int
+
+    @Query("SELECT * FROM sleep_events WHERE profileId = :profileId ORDER BY timestamp DESC LIMIT :limit")
+    fun recent(profileId: String, limit: Int = 200): Flow<List<SleepEvent>>
+
+    @Query("SELECT * FROM sleep_events WHERE profileId = :profileId ORDER BY timestamp DESC")
+    suspend fun allList(profileId: String): List<SleepEvent>
+
+    @Query("SELECT * FROM sleep_events ORDER BY timestamp DESC")
+    suspend fun allListAllProfiles(): List<SleepEvent>
+
+    @Query("UPDATE sleep_events SET profileId = :profileId WHERE profileId = ''")
+    suspend fun assignLegacy(profileId: String)
+
+    @Query("DELETE FROM sleep_events WHERE profileId = :profileId")
+    suspend fun clear(profileId: String)
+
+    @Query("DELETE FROM sleep_events")
+    suspend fun clearAllProfiles()
+}

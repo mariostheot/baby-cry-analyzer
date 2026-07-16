@@ -11,8 +11,10 @@ import com.babycry.analyzer.data.CryEvent
 import com.babycry.analyzer.data.CryRepository
 import com.babycry.analyzer.data.DiaperEvent
 import com.babycry.analyzer.data.FeedingEvent
+import com.babycry.analyzer.data.SleepEvent
 import com.babycry.analyzer.data.StatsSummary
 import com.babycry.analyzer.data.TummyTimeEvent
+import com.babycry.analyzer.insights.CareInsightSummary
 import com.babycry.analyzer.ml.CryAnalysis
 import com.babycry.analyzer.model.AnalysisEngine
 import com.babycry.analyzer.model.BabyGender
@@ -31,7 +33,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
@@ -72,6 +76,19 @@ data class FeedingUiState(
     val elapsedSeconds: Long = 0,
 )
 
+/** A timed nap/sleep session for the currently selected baby. */
+data class SleepUiState(
+    val eventId: Long? = null,
+    val startedAt: Long = 0,
+    val elapsedSeconds: Long = 0,
+)
+
+/** Reactive loader state for on-device care-pattern insights. */
+data class CareInsightsUiState(
+    val loading: Boolean = true,
+    val summary: CareInsightSummary? = null,
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class CryViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -81,6 +98,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     private val soother = SoothingPlayer()
     private var soothingJob: Job? = null
     private var feedingJob: Job? = null
+    private var sleepJob: Job? = null
     private var lastWaveform: FloatArray? = null
 
     @Volatile
@@ -109,6 +127,9 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _feeding = MutableStateFlow(FeedingUiState())
     val feeding: StateFlow<FeedingUiState> = _feeding.asStateFlow()
+
+    private val _sleep = MutableStateFlow(SleepUiState())
+    val sleep: StateFlow<SleepUiState> = _sleep.asStateFlow()
 
     private val _onboardingComplete = MutableStateFlow(repo.isOnboardingComplete())
     val onboardingComplete: StateFlow<Boolean> = _onboardingComplete.asStateFlow()
@@ -139,6 +160,37 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     val recentTummy: StateFlow<List<TummyTimeEvent>> = _profile.flatMapLatest { repo.recentTummy(it.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val recentSleep: StateFlow<List<SleepEvent>> = _profile.flatMapLatest { repo.recentSleep(it.id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // kotlinx-coroutines only offers typed combine() up to 5 flows, so fold the four care
+    // event streams into one change-trigger first and combine that with profile + language.
+    private val careEventsChanged: kotlinx.coroutines.flow.Flow<Unit> = combine(
+        recentEvents,
+        recentFeedings,
+        recentDiapers,
+        recentSleep,
+    ) { _, _, _, _ -> Unit }
+
+    val careInsights: StateFlow<CareInsightsUiState> = combine(
+        _profile,
+        _language,
+        careEventsChanged,
+    ) { profile, _, _ -> profile.id }
+        .flatMapLatest { profileId ->
+            flow {
+                emit(CareInsightsUiState(loading = true, summary = null))
+                val summary = runCatching { repo.careInsights(profileId) }.getOrNull()
+                emit(
+                    CareInsightsUiState(
+                        loading = false,
+                        summary = summary,
+                    ),
+                )
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CareInsightsUiState())
 
     private val _tummyReminderEnabled = MutableStateFlow(repo.isTummyReminderEnabled())
     val tummyReminderEnabled: StateFlow<Boolean> = _tummyReminderEnabled.asStateFlow()
@@ -394,6 +446,61 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
                 scheduleFeedReminder()
             }
         }
+    }
+
+    /**
+     * The Home sleep button starts/stops one session for the selected baby. The session lives
+     * in Room from the first tap, so its timer can be restored after an app restart.
+     */
+    fun toggleSleep() {
+        viewModelScope.launch {
+            val profileId = _profile.value.id
+            val active = repo.activeSleep(profileId)
+            if (active == null) {
+                val started = repo.startSleep(profileId)
+                startSleepTimer(started)
+                _home.update { it.copy(message = trS("Άρχισε ο ύπνος. Πάτησε ξανά όταν ξυπνήσει.")) }
+            } else {
+                val completed = repo.stopSleep(profileId) ?: return@launch
+                stopSleepTimer()
+                _home.update { it.copy(message = sleepCompleteMessage(completed.durationMs)) }
+            }
+        }
+    }
+
+    fun updateSleep(eventId: Long, startedAt: Long, durationMs: Long) {
+        viewModelScope.launch {
+            if (repo.updateSleep(eventId, startedAt, durationMs)) {
+                _home.update { it.copy(message = trS("Ενημερώθηκε ο ύπνος.")) }
+            }
+        }
+    }
+
+    private suspend fun refreshActiveSleep() {
+        val active = repo.activeSleep(_profile.value.id)
+        if (active == null) stopSleepTimer() else startSleepTimer(active)
+    }
+
+    private fun startSleepTimer(event: SleepEvent) {
+        sleepJob?.cancel()
+        fun currentState() = SleepUiState(
+            eventId = event.id,
+            startedAt = event.timestamp,
+            elapsedSeconds = ((System.currentTimeMillis() - event.timestamp) / 1_000L).coerceAtLeast(0L),
+        )
+        _sleep.value = currentState()
+        sleepJob = viewModelScope.launch {
+            while (isActive && _sleep.value.eventId == event.id) {
+                _sleep.value = currentState()
+                delay(1_000L)
+            }
+        }
+    }
+
+    private fun stopSleepTimer() {
+        sleepJob?.cancel()
+        sleepJob = null
+        _sleep.value = SleepUiState()
     }
 
     private suspend fun refreshActiveFeeding() {
@@ -658,6 +765,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         repo.refreshPersonalization()
         refreshPendingNow()
         refreshActiveFeeding()
+        refreshActiveSleep()
         scheduleFeedReminder()
         scheduleTummyReminder()
     }
@@ -680,6 +788,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
             ConfirmReminder.cancelAllForProfile(getApplication<Application>(), profileId, pendingIds)
             _pending.value = null
             refreshActiveFeeding()
+            refreshActiveSleep()
             scheduleFeedReminder()
             _home.update { it.copy(message = trS("Το ιστορικό & τα στατιστικά μηδενίστηκαν.")) }
         }
@@ -771,6 +880,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         player.stop()
         _playback.value = PlaybackUiState()
         feedingJob?.cancel()
+        sleepJob?.cancel()
         soother.stop()
         super.onCleared()
     }
@@ -792,6 +902,16 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
             return when (currentAppLang) {
                 AppLang.EN -> "Feeding recorded: ${minutes}m ${seconds}s."
                 AppLang.EL -> "Καταγράφηκε τάισμα: ${minutes}λ ${seconds}δ."
+            }
+        }
+
+        private fun sleepCompleteMessage(durationMs: Long): String {
+            val totalSeconds = (durationMs / 1_000L).coerceAtLeast(0L)
+            val minutes = totalSeconds / 60L
+            val seconds = totalSeconds % 60L
+            return when (currentAppLang) {
+                AppLang.EN -> "Sleep recorded: ${minutes}m ${seconds}s."
+                AppLang.EL -> "Καταγράφηκε ύπνος: ${minutes}λ ${seconds}δ."
             }
         }
 

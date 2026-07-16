@@ -6,22 +6,27 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -30,8 +35,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -46,6 +53,7 @@ import com.babycry.analyzer.context.ContextPrior
 import com.babycry.analyzer.data.CryEvent
 import com.babycry.analyzer.data.DiaperEvent
 import com.babycry.analyzer.data.FeedingEvent
+import com.babycry.analyzer.data.SleepEvent
 import com.babycry.analyzer.data.TummyTimeEvent
 import com.babycry.analyzer.model.BabyProfile
 import com.babycry.analyzer.model.CryReason
@@ -54,6 +62,7 @@ import com.babycry.analyzer.model.TummyTime
 import com.babycry.analyzer.ui.i18n.AppLang
 import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.tr
+import com.babycry.analyzer.ui.i18n.translate
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -71,6 +80,7 @@ private fun dayShortFormat() = SimpleDateFormat("EEE", displayLocale())
 fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val events by viewModel.recentEvents.collectAsState()
     val feedings by viewModel.recentFeedings.collectAsState()
+    val sleeps by viewModel.recentSleep.collectAsState()
     val diapers by viewModel.recentDiapers.collectAsState()
     val tummy by viewModel.recentTummy.collectAsState()
     val profile by viewModel.profile.collectAsState()
@@ -79,15 +89,33 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     var confirmClear by remember { mutableStateOf(false) }
     var editEvent by remember { mutableStateOf<CryEvent?>(null) }
     var editFeeding by remember { mutableStateOf<FeedingEvent?>(null) }
+    var editSleep by remember { mutableStateOf<SleepEvent?>(null) }
     var pendingDelete by remember { mutableStateOf<CryEvent?>(null) }
 
     val now = System.currentTimeMillis()
+    val todayStart = remember(now) { startOfDay(now) }
     val cries = remember(events) { events.filter { it.cryDetected } }
-    val summary = remember(events, feedings, diapers, tummy, profile, language) {
-        computeSummary(cries, feedings, diapers, tummy, labels, profile, now)
+    val summary = remember(events, feedings, sleeps, diapers, tummy, profile, language) {
+        computeSummary(cries, feedings, sleeps, diapers, tummy, labels, profile, now)
     }
-    val lines = remember(events, feedings, diapers, tummy, language) {
-        buildTimeline(cries, feedings, diapers, tummy, now)
+    val loggedDays = remember(cries, feedings, sleeps, diapers, tummy) {
+        collectLoggedDays(cries, feedings, sleeps, diapers, tummy)
+    }
+    val defaultDay = remember(loggedDays, todayStart) {
+        if (loggedDays.contains(todayStart)) todayStart else loggedDays.maxOrNull() ?: todayStart
+    }
+    var selectedDayStart by remember { mutableLongStateOf(Long.MIN_VALUE) }
+    LaunchedEffect(defaultDay) {
+        if (selectedDayStart == Long.MIN_VALUE) {
+            selectedDayStart = defaultDay
+        }
+    }
+    val activeDayStart = if (selectedDayStart == Long.MIN_VALUE) defaultDay else selectedDayStart
+    val daySummary = remember(cries, feedings, sleeps, diapers, tummy, labels, profile, activeDayStart, language) {
+        computeDaySummary(cries, feedings, sleeps, diapers, tummy, labels, profile, activeDayStart)
+    }
+    val dayLines = remember(cries, feedings, sleeps, diapers, tummy, activeDayStart, language) {
+        buildDayTimeline(cries, feedings, sleeps, diapers, tummy, activeDayStart)
     }
 
     LazyColumn(
@@ -105,7 +133,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(tr("Ιστορικό"), style = MaterialTheme.typography.headlineMedium)
-                if (cries.isNotEmpty() || feedings.isNotEmpty() || diapers.isNotEmpty() || tummy.isNotEmpty()) {
+                if (cries.isNotEmpty() || feedings.isNotEmpty() || sleeps.isNotEmpty() || diapers.isNotEmpty() || tummy.isNotEmpty()) {
                     TextButton(onClick = { confirmClear = true }) {
                         Icon(Icons.Filled.DeleteSweep, contentDescription = null)
                         Spacer(Modifier.size(4.dp))
@@ -115,51 +143,90 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
             }
         }
 
-        if (cries.isEmpty() && feedings.isEmpty() && diapers.isEmpty() && tummy.isEmpty()) {
+        if (cries.isEmpty() && feedings.isEmpty() && sleeps.isEmpty() && diapers.isEmpty() && tummy.isEmpty()) {
             item {
-                Text(tr("Δεν υπάρχουν ακόμα καταγραφές. Πάτα «Άκου το μωρό» ή κατέγραψε ένα τάισμα."))
+                Text(tr("Δεν υπάρχουν ακόμα καταγραφές. Πάτα «Άκου το μωρό» ή κατέγραψε ένα τάισμα ή ύπνο."))
             }
         } else {
             item { LiveTiles(summary) }
-            item { TodayCard(summary) }
             item {
-                Column(Modifier.padding(top = 8.dp)) {
-                    Text(tr("Χρονολόγιο"), style = MaterialTheme.typography.titleLarge)
+                DayNavigationBar(
+                    selectedDayStart = activeDayStart,
+                    todayStart = todayStart,
+                    onPrevious = { selectedDayStart = startOfDay(activeDayStart - 86_400_000L) },
+                    onNext = {
+                        if (activeDayStart < todayStart) {
+                            selectedDayStart = minOf(startOfDay(activeDayStart + 86_400_000L), todayStart)
+                        }
+                    },
+                    onToday = { selectedDayStart = todayStart },
+                )
+            }
+            item { DaySummaryCard(daySummary) }
+            item {
+                Text(
+                    tr("Πάτησε μια καταγραφή για να διορθώσεις την αιτία ή τη διάρκεια ταΐσματος/ύπνου."),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            if (dayLines.isEmpty()) {
+                item {
                     Text(
-                        tr("Πάτησε μια καταγραφή για να διορθώσεις την αιτία ή τη διάρκεια ταΐσματος."),
+                        tr("Δεν υπάρχουν καταγραφές αυτή την ημέρα."),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(vertical = 8.dp),
                     )
                 }
-            }
-            items(
-                lines,
-                key = {
-                    when (it) {
-                        is Line.Header -> "h_${it.label}"
-                        is Line.Cry -> "c_${it.e.id}"
-                        is Line.Feed -> "f_${it.e.id}"
-                        is Line.Diaper -> "d_${it.e.id}"
-                        is Line.Tummy -> "t_${it.e.id}"
+            } else {
+                itemsIndexed(
+                    dayLines,
+                    key = { _, line ->
+                        when (line) {
+                            is Line.Cry -> "c_${line.e.id}"
+                            is Line.Feed -> "f_${line.e.id}"
+                            is Line.Sleep -> "s_${line.e.id}"
+                            is Line.Diaper -> "d_${line.e.id}"
+                            is Line.Tummy -> "t_${line.e.id}"
+                        }
+                    },
+                ) { index, line ->
+                    val isFirst = index == 0
+                    val isLast = index == dayLines.lastIndex
+                    when (line) {
+                        is Line.Cry -> CryTimelineRow(
+                            event = line.e,
+                            labels = labels,
+                            isFirst = isFirst,
+                            isLast = isLast,
+                            onEdit = { editEvent = line.e },
+                            onDelete = { pendingDelete = line.e },
+                        )
+                        is Line.Feed -> FeedTimelineRow(
+                            feeding = line.e,
+                            isFirst = isFirst,
+                            isLast = isLast,
+                            onEdit = { editFeeding = line.e },
+                        )
+                        is Line.Sleep -> SleepTimelineRow(
+                            sleep = line.e,
+                            isFirst = isFirst,
+                            isLast = isLast,
+                            onEdit = { editSleep = line.e },
+                        )
+                        is Line.Diaper -> DiaperTimelineRow(
+                            diaper = line.e,
+                            isFirst = isFirst,
+                            isLast = isLast,
+                        )
+                        is Line.Tummy -> TummyTimelineRow(
+                            tummy = line.e,
+                            isFirst = isFirst,
+                            isLast = isLast,
+                        )
                     }
-                },
-            ) { line ->
-                when (line) {
-                    is Line.Header -> Text(
-                        line.label,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
-                    )
-                    is Line.Cry -> CryRow(
-                        event = line.e,
-                        labels = labels,
-                        onEdit = { editEvent = line.e },
-                        onDelete = { pendingDelete = line.e },
-                    )
-                    is Line.Feed -> FeedRow(line.e, onEdit = { editFeeding = line.e })
-                    is Line.Diaper -> DiaperRow(line.e)
-                    is Line.Tummy -> TummyRow(line.e)
                 }
             }
             item { PatternsCard(summary) }
@@ -338,6 +405,117 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
         )
     }
 
+    editSleep?.let { sleepEvent ->
+        val isRunning = sleepEvent.durationMs < 0L
+        val startCal = Calendar.getInstance().apply { timeInMillis = sleepEvent.timestamp }
+        val endCal = Calendar.getInstance().apply {
+            timeInMillis = sleepEvent.timestamp + sleepEvent.durationMs.coerceAtLeast(0L)
+        }
+        var startHourText by remember(sleepEvent.id, sleepEvent.timestamp) {
+            mutableStateOf(startCal.get(Calendar.HOUR_OF_DAY).toString())
+        }
+        var startMinuteText by remember(sleepEvent.id, sleepEvent.timestamp) {
+            mutableStateOf(startCal.get(Calendar.MINUTE).toString())
+        }
+        var endHourText by remember(sleepEvent.id, sleepEvent.timestamp, sleepEvent.durationMs) {
+            mutableStateOf(endCal.get(Calendar.HOUR_OF_DAY).toString())
+        }
+        var endMinuteText by remember(sleepEvent.id, sleepEvent.timestamp, sleepEvent.durationMs) {
+            mutableStateOf(endCal.get(Calendar.MINUTE).toString())
+        }
+        val startHour = startHourText.toIntOrNull()?.takeIf { it in 0..23 }
+        val startMinute = startMinuteText.toIntOrNull()?.takeIf { it in 0..59 }
+        val endHour = endHourText.toIntOrNull()?.takeIf { it in 0..23 }
+        val endMinute = endMinuteText.toIntOrNull()?.takeIf { it in 0..59 }
+
+        val updatedStartedAt = Calendar.getInstance().apply {
+            timeInMillis = sleepEvent.timestamp
+            set(Calendar.HOUR_OF_DAY, startHour ?: get(Calendar.HOUR_OF_DAY))
+            set(Calendar.MINUTE, startMinute ?: get(Calendar.MINUTE))
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val endMillis = Calendar.getInstance().apply {
+            timeInMillis = sleepEvent.timestamp
+            set(Calendar.HOUR_OF_DAY, endHour ?: get(Calendar.HOUR_OF_DAY))
+            set(Calendar.MINUTE, endMinute ?: get(Calendar.MINUTE))
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val durationMs = (endMillis - updatedStartedAt).let { if (it < 0L) it + 86_400_000L else it }
+        val valid = startHour != null && startMinute != null &&
+            endHour != null && endMinute != null && durationMs > 0L
+
+        AlertDialog(
+            onDismissRequest = { editSleep = null },
+            title = { Text(tr("Επεξεργασία ύπνου")) },
+            text = {
+                if (isRunning) {
+                    Text(
+                        tr("Ο ύπνος είναι σε εξέλιξη") + ". " +
+                            tr("Πάτησε το κουμπί στην αρχική για να τον σταματήσεις."),
+                    )
+                } else {
+                    Column {
+                        Text(tr("Ώρα έναρξης"), style = MaterialTheme.typography.labelLarge)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = startHourText,
+                                onValueChange = { startHourText = it.filter { char -> char.isDigit() }.take(2) },
+                                label = { Text(tr("Ώρα")) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                            )
+                            OutlinedTextField(
+                                value = startMinuteText,
+                                onValueChange = { startMinuteText = it.filter { char -> char.isDigit() }.take(2) },
+                                label = { Text(tr("Λεπτά")) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Text(tr("Ώρα λήξης"), style = MaterialTheme.typography.labelLarge)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = endHourText,
+                                onValueChange = { endHourText = it.filter { char -> char.isDigit() }.take(2) },
+                                label = { Text(tr("Ώρα")) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                            )
+                            OutlinedTextField(
+                                value = endMinuteText,
+                                onValueChange = { endMinuteText = it.filter { char -> char.isDigit() }.take(2) },
+                                label = { Text(tr("Λεπτά")) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (!isRunning) {
+                    TextButton(
+                        onClick = {
+                            viewModel.updateSleep(sleepEvent.id, updatedStartedAt, durationMs)
+                            editSleep = null
+                        },
+                        enabled = valid,
+                    ) { Text(tr("Αποθήκευση")) }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editSleep = null }) { Text(tr("Κλείσιμο")) }
+            },
+        )
+    }
+
     pendingDelete?.let { ev ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
@@ -360,33 +538,52 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
 
 @Composable
 private fun LiveTiles(s: HistorySummary) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        val overdue = s.nextFeedInMs != null && s.nextFeedInMs <= 0
-        Tile(
-            modifier = Modifier.weight(1f),
-            emoji = "🍼",
-            title = tr("Τελευταίο τάισμα"),
-            big = when {
-                s.feedingNow -> tr("τώρα")
-                else -> s.lastFeedAgoMs?.let(::relativeAgo) ?: "—"
-            },
-            subtitle = when {
-                s.feedingNow -> tr("ταΐζεται τώρα")
-                s.lastFeedAgoMs == null -> tr("δεν έχει καταγραφεί")
-                s.nextFeedInMs == null -> ""
-                overdue -> tr("ίσως πεινάει")
-                else -> nextFeedSubtitle(s.nextFeedInMs)
-            },
-            subtitleAccent = overdue,
-        )
-        Tile(
-            modifier = Modifier.weight(1f),
-            emoji = "😢",
-            title = tr("Τελευταίο κλάμα"),
-            big = s.lastCryAgoMs?.let(::relativeAgo) ?: "—",
-            subtitle = s.lastCryReason?.let { "${it.emoji} ${tr(it.displayName)}" } ?: "—",
-            subtitleAccent = false,
-        )
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            val overdue = s.nextFeedInMs != null && s.nextFeedInMs <= 0
+            Tile(
+                modifier = Modifier.weight(1f),
+                emoji = "🍼",
+                title = tr("Τελευταίο τάισμα"),
+                big = when {
+                    s.feedingNow -> tr("τώρα")
+                    else -> s.lastFeedAgoMs?.let(::relativeAgo) ?: "—"
+                },
+                subtitle = when {
+                    s.feedingNow -> tr("ταΐζεται τώρα")
+                    s.lastFeedAgoMs == null -> tr("δεν έχει καταγραφεί")
+                    s.nextFeedInMs == null -> ""
+                    overdue -> tr("ίσως πεινάει")
+                    else -> nextFeedSubtitle(s.nextFeedInMs)
+                },
+                subtitleAccent = overdue,
+            )
+            Tile(
+                modifier = Modifier.weight(1f),
+                emoji = "😴",
+                title = tr("Τελευταίος ύπνος"),
+                big = when {
+                    s.sleepingNow -> tr("τώρα")
+                    else -> s.lastSleepAgoMs?.let(::relativeAgo) ?: "—"
+                },
+                subtitle = when {
+                    s.sleepingNow -> tr("κοιμάται τώρα")
+                    s.lastSleepAgoMs == null -> tr("δεν έχει καταγραφεί")
+                    else -> ""
+                },
+                subtitleAccent = false,
+            )
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Tile(
+                modifier = Modifier.weight(1f),
+                emoji = "😢",
+                title = tr("Τελευταίο κλάμα"),
+                big = s.lastCryAgoMs?.let(::relativeAgo) ?: "—",
+                subtitle = s.lastCryReason?.let { "${it.emoji} ${tr(it.displayName)}" } ?: "—",
+                subtitleAccent = false,
+            )
+        }
     }
 }
 
@@ -427,100 +624,90 @@ private fun Tile(
 }
 
 @Composable
-private fun TodayCard(s: HistorySummary) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text(tr("Σήμερα"), style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.height(8.dp))
-            InsightLine(tr("Κλάματα"), s.criesToday.toString())
-            val diff = s.criesToday - s.criesYesterday
-            val cmp = criesComparison(diff, s.criesYesterday)
+private fun DayNavigationBar(
+    selectedDayStart: Long,
+    todayStart: Long,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onToday: () -> Unit,
+) {
+    val onTodaySelected = selectedDayStart == todayStart
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        IconButton(onClick = onPrevious) {
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                contentDescription = tr("Προηγούμενη ημέρα"),
+            )
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                cmp,
+                dayLabel(selectedDayStart, todayStart),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                dayHeaderFormat().format(Date(selectedDayStart)),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
-            Spacer(Modifier.height(6.dp))
-            InsightLine(tr("Ταΐσματα"), s.feedsToday.toString())
-            Spacer(Modifier.height(6.dp))
-            InsightLine(
-                tr("Αλλαγές πάνας"),
-                if (s.poopsToday > 0) "${s.diapersToday}  (💩 ${s.poopsToday})" else s.diapersToday.toString(),
-            )
-            Spacer(Modifier.height(6.dp))
-            InsightLine("🤸 ${tr("Tummy Time")}", "${s.tummyToday} / ${s.tummyGoal}")
-            if (s.topReasonToday != null) {
-                Spacer(Modifier.height(6.dp))
-                InsightLine(
-                    tr("Πιο συχνή αιτία"),
-                    "${s.topReasonToday.emoji} ${tr(s.topReasonToday.displayName)}",
-                )
-            }
         }
-    }
-}
-
-private fun criesComparison(diff: Int, yesterday: Int): String = when (currentAppLang) {
-    AppLang.EN -> when {
-        diff < 0 -> "↓ fewer than yesterday (yesterday: $yesterday)"
-        diff > 0 -> "↑ more than yesterday (yesterday: $yesterday)"
-        else -> "≈ same as yesterday (yesterday: $yesterday)"
-    }
-    AppLang.EL -> when {
-        diff < 0 -> "↓ λιγότερα από χθες (χθες: $yesterday)"
-        diff > 0 -> "↑ περισσότερα από χθες (χθες: $yesterday)"
-        else -> "≈ ίδια με χθες (χθες: $yesterday)"
-    }
-}
-
-@Composable
-private fun CryRow(
-    event: CryEvent,
-    labels: List<CryReason>,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    val predicted = event.predictedIndex.takeIf { it in labels.indices }?.let { labels[it] }
-    val confirmed = event.confirmedIndex?.takeIf { it in labels.indices }?.let { labels[it] }
-    Card(Modifier.fillMaxWidth().clickable(onClick = onEdit)) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = 14.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        IconButton(
+            onClick = onNext,
+            enabled = selectedDayStart < todayStart,
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = predicted?.let { "${it.emoji} ${tr(it.displayName)}" } ?: "—",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                )
-                Text(
-                    timeFormat().format(Date(event.timestamp)),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                )
-                if (confirmed != null) {
-                    val ok = event.confirmedIndex == event.predictedIndex
-                    Text(
-                        text = if (ok) tr("✓ επιβεβαιώθηκε")
-                        else correctionLabel(confirmed),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (ok) MaterialTheme.colorScheme.secondary
-                        else MaterialTheme.colorScheme.tertiary,
-                    )
-                }
-            }
-            Text(
-                "${(event.confidence * 100).roundToInt()}%",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = tr("Επόμενη ημέρα"),
             )
-            IconButton(onClick = onDelete) {
-                Icon(
-                    Icons.Filled.DeleteOutline,
-                    contentDescription = tr("Διαγραφή"),
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+        }
+    }
+    if (!onTodaySelected) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+            TextButton(onClick = onToday) {
+                Text(tr("Σήμερα"))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DaySummaryCard(s: DaySummary) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                DaySummaryChip("😢", s.cries.toString(), tr("Κλάματα"))
+                DaySummaryChip("🍼", s.feeds.toString(), tr("Ταΐσματα"))
+                DaySummaryChip("😴", s.sleeps.toString(), tr("Ύπνος"))
+                DaySummaryChip(
+                    "🧷",
+                    if (s.poops > 0) "${s.diapers}·💩${s.poops}" else s.diapers.toString(),
+                    tr("Πάνες"),
+                )
+                DaySummaryChip("🤸", "${s.tummy}/${s.tummyGoal}", tr("Tummy Time"))
+            }
+            if (s.topReason != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "${tr("Πιο συχνή αιτία")}: ${s.topReason.emoji} ${tr(s.topReason.displayName)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                )
+            }
+            if (s.criesYesterdayComparison != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    s.criesYesterdayComparison,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 )
             }
         }
@@ -528,46 +715,106 @@ private fun CryRow(
 }
 
 @Composable
-private fun correctionLabel(confirmed: CryReason): String = when (currentAppLang) {
-    AppLang.EN -> "✎ corrected: ${tr(confirmed.displayName)}"
-    AppLang.EL -> "✎ διόρθωση: ${confirmed.displayName}"
+private fun DaySummaryChip(emoji: String, value: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(emoji, style = MaterialTheme.typography.titleMedium)
+        Text(value, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+            maxLines = 1,
+        )
+    }
 }
 
 @Composable
-private fun FeedRow(feeding: FeedingEvent, onEdit: () -> Unit) {
-    val startTime = timeFormat().format(Date(feeding.timestamp))
-    val title = when {
-        feeding.durationMs < 0L -> "${tr("Τάισμα")} · ${tr("Το τάισμα είναι σε εξέλιξη")}"
-        feeding.durationMs > 0L -> "${tr("Τάισμα")} · ${feedingDurationText(feeding.durationMs)}"
-        else -> tr("Τάισμα")
-    }
-    val timeRange = when {
-        feeding.durationMs < 0L -> startTime
-        feeding.durationMs > 0L -> {
-            val endTime = timeFormat().format(Date(feeding.timestamp + feeding.durationMs))
-            "$startTime – $endTime"
+private fun TimelineConnector(
+    color: Color,
+    isFirst: Boolean,
+    isLast: Boolean,
+) {
+    Box(
+        Modifier
+            .width(28.dp)
+            .height(IntrinsicSize.Min),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        if (!isFirst) {
+            Box(
+                Modifier
+                    .width(2.dp)
+                    .fillMaxHeight(0.5f)
+                    .align(Alignment.TopCenter)
+                    .background(color.copy(alpha = 0.35f)),
+            )
         }
-        else -> startTime
+        Box(
+            Modifier
+                .padding(top = 10.dp)
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(color),
+        )
+        if (!isLast) {
+            Box(
+                Modifier
+                    .width(2.dp)
+                    .fillMaxHeight()
+                    .padding(top = 20.dp)
+                    .align(Alignment.TopCenter)
+                    .background(color.copy(alpha = 0.35f)),
+            )
+        }
     }
-    Card(
+}
+
+@Composable
+private fun TimelineRowShell(
+    timestamp: Long,
+    color: Color,
+    isFirst: Boolean,
+    isLast: Boolean,
+    icon: String,
+    label: String,
+    metadata: String?,
+    onClick: (() -> Unit)?,
+    trailing: @Composable (() -> Unit)? = null,
+) {
+    Row(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onEdit),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f),
-        ),
+            .height(IntrinsicSize.Min)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        Row(
+        Text(
+            timeFormat().format(Date(timestamp)),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+            modifier = Modifier
+                .width(48.dp)
+                .padding(top = 8.dp),
+        )
+        TimelineConnector(color = color, isFirst = isFirst, isLast = isLast)
+        Column(
             Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .weight(1f)
+                .padding(start = 4.dp, top = 4.dp, bottom = 8.dp),
         ) {
-            Column {
-                Text("🍼  $title", style = MaterialTheme.typography.bodyLarge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    timeRange,
+                    "$icon  $label",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f),
+                )
+                trailing?.invoke()
+            }
+            if (!metadata.isNullOrBlank()) {
+                Text(
+                    metadata,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
@@ -577,8 +824,150 @@ private fun FeedRow(feeding: FeedingEvent, onEdit: () -> Unit) {
 }
 
 @Composable
+private fun CryTimelineRow(
+    event: CryEvent,
+    labels: List<CryReason>,
+    isFirst: Boolean,
+    isLast: Boolean,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val reason = reasonOf(event, labels)
+    val label = reason?.let { "${it.emoji} ${tr(it.displayName)}" } ?: tr("Κλάμα")
+    val metadata = "${(event.confidence * 100).roundToInt()}%"
+    TimelineRowShell(
+        timestamp = event.timestamp,
+        color = MaterialTheme.colorScheme.primary,
+        isFirst = isFirst,
+        isLast = isLast,
+        icon = "😢",
+        label = label,
+        metadata = metadata,
+        onClick = onEdit,
+        trailing = {
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(36.dp),
+            ) {
+                Icon(
+                    Icons.Filled.DeleteOutline,
+                    contentDescription = tr("Διαγραφή"),
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        },
+    )
+}
+
+@Composable
+private fun FeedTimelineRow(
+    feeding: FeedingEvent,
+    isFirst: Boolean,
+    isLast: Boolean,
+    onEdit: () -> Unit,
+) {
+    val isRunning = feeding.durationMs < 0L
+    val metadata = when {
+        isRunning -> tr("Το τάισμα είναι σε εξέλιξη")
+        feeding.durationMs > 0L -> {
+            val endTime = timeFormat().format(Date(feeding.timestamp + feeding.durationMs))
+            "${feedingDurationText(feeding.durationMs)} · $endTime"
+        }
+        else -> null
+    }
+    TimelineRowShell(
+        timestamp = feeding.timestamp,
+        color = MaterialTheme.colorScheme.secondary,
+        isFirst = isFirst,
+        isLast = isLast,
+        icon = "🍼",
+        label = tr("Τάισμα"),
+        metadata = metadata,
+        onClick = onEdit,
+    )
+}
+
+@Composable
+private fun SleepTimelineRow(
+    sleep: SleepEvent,
+    isFirst: Boolean,
+    isLast: Boolean,
+    onEdit: () -> Unit,
+) {
+    val isRunning = sleep.durationMs < 0L
+    val metadata = when {
+        isRunning -> tr("Ο ύπνος είναι σε εξέλιξη")
+        sleep.durationMs > 0L -> {
+            val endTime = timeFormat().format(Date(sleep.timestamp + sleep.durationMs))
+            "${sleepDurationText(sleep.durationMs)} · $endTime"
+        }
+        else -> null
+    }
+    TimelineRowShell(
+        timestamp = sleep.timestamp,
+        color = MaterialTheme.colorScheme.tertiary,
+        isFirst = isFirst,
+        isLast = isLast,
+        icon = "😴",
+        label = tr("Ύπνος"),
+        metadata = metadata,
+        onClick = onEdit,
+    )
+}
+
+@Composable
+private fun DiaperTimelineRow(
+    diaper: DiaperEvent,
+    isFirst: Boolean,
+    isLast: Boolean,
+) {
+    val type = DiaperType.fromNameOrNull(diaper.type) ?: DiaperType.WET
+    TimelineRowShell(
+        timestamp = diaper.timestamp,
+        color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f),
+        isFirst = isFirst,
+        isLast = isLast,
+        icon = type.emoji,
+        label = tr("Πάνα"),
+        metadata = tr(type.displayName),
+        onClick = null,
+    )
+}
+
+@Composable
+private fun TummyTimelineRow(
+    tummy: TummyTimeEvent,
+    isFirst: Boolean,
+    isLast: Boolean,
+) {
+    TimelineRowShell(
+        timestamp = tummy.timestamp,
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+        isFirst = isFirst,
+        isLast = isLast,
+        icon = "🤸",
+        label = tr("Tummy Time"),
+        metadata = null,
+        onClick = null,
+    )
+}
+
+private fun criesComparisonForDay(diff: Int, previousDay: Int): String = when (currentAppLang) {
+    AppLang.EN -> when {
+        diff < 0 -> "↓ fewer than previous day ($previousDay)"
+        diff > 0 -> "↑ more than previous day ($previousDay)"
+        else -> "≈ same as previous day ($previousDay)"
+    }
+    AppLang.EL -> when {
+        diff < 0 -> "↓ λιγότερα από την προηγούμενη ημέρα ($previousDay)"
+        diff > 0 -> "↑ περισσότερα από την προηγούμενη ημέρα ($previousDay)"
+        else -> "≈ ίδια με την προηγούμενη ημέρα ($previousDay)"
+    }
+}
+
+@Composable
 private fun feedingDurationText(durationMs: Long): String {
-    // We only track whole minutes now; round to the nearest minute for display.
     val minutes = ((durationMs.coerceAtLeast(0L) + 30_000L) / 60_000L)
     return when (currentAppLang) {
         AppLang.EN -> "$minutes min"
@@ -587,56 +976,11 @@ private fun feedingDurationText(durationMs: Long): String {
 }
 
 @Composable
-private fun DiaperRow(diaper: DiaperEvent) {
-    val type = DiaperType.fromNameOrNull(diaper.type) ?: DiaperType.WET
-    Card(
-        Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f),
-        ),
-    ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                "${type.emoji}  ${tr("Πάνα")} · ${tr(type.displayName)}",
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            Text(
-                timeFormat().format(Date(diaper.timestamp)),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            )
-        }
-    }
-}
-
-@Composable
-private fun TummyRow(tummy: TummyTimeEvent) {
-    Card(
-        Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-        ),
-    ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text("🤸  ${tr("Tummy Time")}", style = MaterialTheme.typography.bodyLarge)
-            Text(
-                timeFormat().format(Date(tummy.timestamp)),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            )
-        }
+private fun sleepDurationText(durationMs: Long): String {
+    val minutes = ((durationMs.coerceAtLeast(0L) + 30_000L) / 60_000L)
+    return when (currentAppLang) {
+        AppLang.EN -> "$minutes min"
+        AppLang.EL -> "$minutes λεπτά"
     }
 }
 
@@ -790,23 +1134,38 @@ private fun InsightLine(label: String, value: String) {
 
 // ---------------- data + helpers ----------------
 
+private data class DaySummary(
+    val cries: Int,
+    val feeds: Int,
+    val sleeps: Int,
+    val diapers: Int,
+    val poops: Int,
+    val tummy: Int,
+    val tummyGoal: Int,
+    val topReason: CryReason?,
+    val criesYesterdayComparison: String?,
+)
+
 private sealed interface Line {
-    data class Header(val label: String) : Line
     data class Cry(val e: CryEvent) : Line
     data class Feed(val e: FeedingEvent) : Line
+    data class Sleep(val e: SleepEvent) : Line
     data class Diaper(val e: DiaperEvent) : Line
     data class Tummy(val e: TummyTimeEvent) : Line
 }
 
 private data class HistorySummary(
     val feedingNow: Boolean,
+    val sleepingNow: Boolean,
     val lastFeedAgoMs: Long?,
+    val lastSleepAgoMs: Long?,
     val nextFeedInMs: Long?,
     val lastCryAgoMs: Long?,
     val lastCryReason: CryReason?,
     val criesToday: Int,
     val criesYesterday: Int,
     val feedsToday: Int,
+    val sleepsToday: Int,
     val diapersToday: Int,
     val poopsToday: Int,
     val tummyToday: Int,
@@ -828,6 +1187,7 @@ private fun reasonOf(e: CryEvent, labels: List<CryReason>): CryReason? {
 private fun computeSummary(
     cries: List<CryEvent>,
     feedings: List<FeedingEvent>,
+    sleeps: List<SleepEvent>,
     diapers: List<DiaperEvent>,
     tummy: List<TummyTimeEvent>,
     labels: List<CryReason>,
@@ -846,6 +1206,10 @@ private fun computeSummary(
     val lastFeed = if (feedingNow) null else completedFeedings.maxOfOrNull(::feedingEndedAt)
     val expectedHours = ContextPrior.expectedFeedIntervalHours(profile.ageMonths(now), profile.ageDays(now))
     val nextFeedInMs = lastFeed?.let { it + (expectedHours * 3_600_000L).toLong() - now }
+
+    val sleepingNow = sleeps.any { it.durationMs < 0L }
+    val completedSleeps = sleeps.filter { it.durationMs >= 0L }
+    val lastSleep = if (sleepingNow) null else completedSleeps.maxOfOrNull(::sleepEndedAt)
 
     val lastCry = cries.firstOrNull()
 
@@ -893,13 +1257,16 @@ private fun computeSummary(
 
     return HistorySummary(
         feedingNow = feedingNow,
+        sleepingNow = sleepingNow,
         lastFeedAgoMs = lastFeed?.let { now - it },
+        lastSleepAgoMs = lastSleep?.let { now - it },
         nextFeedInMs = nextFeedInMs,
         lastCryAgoMs = lastCry?.let { now - it.timestamp },
         lastCryReason = lastCry?.let { reasonOf(it, labels) },
         criesToday = cries.count { it.timestamp >= todayStart },
         criesYesterday = cries.count { it.timestamp in (todayStart - dayMs) until todayStart },
         feedsToday = completedFeedings.count { it.timestamp >= todayStart },
+        sleepsToday = completedSleeps.count { it.timestamp >= todayStart },
         diapersToday = diapers.count { it.timestamp >= todayStart },
         poopsToday = diapers.count {
             it.timestamp >= todayStart && DiaperType.fromNameOrNull(it.type)?.hasStool == true
@@ -916,40 +1283,104 @@ private fun computeSummary(
     )
 }
 
+private fun computeDaySummary(
+    cries: List<CryEvent>,
+    feedings: List<FeedingEvent>,
+    sleeps: List<SleepEvent>,
+    diapers: List<DiaperEvent>,
+    tummy: List<TummyTimeEvent>,
+    labels: List<CryReason>,
+    profile: BabyProfile,
+    dayStart: Long,
+): DaySummary {
+    val dayMs = 86_400_000L
+    val dayEnd = dayStart + dayMs
+    val prevStart = dayStart - dayMs
+    fun inDay(ts: Long) = ts in dayStart until dayEnd
+
+    val completedFeedings = feedings.filter { it.durationMs >= 0L }
+    val completedSleeps = sleeps.filter { it.durationMs >= 0L }
+
+    val dayCounts = IntArray(labels.size)
+    for (e in cries) if (inDay(e.timestamp)) {
+        reasonOf(e, labels)?.let { dayCounts[it.ordinal]++ }
+    }
+    var topIdx = -1
+    for (i in dayCounts.indices) {
+        if (dayCounts[i] > 0 && (topIdx < 0 || dayCounts[i] > dayCounts[topIdx])) topIdx = i
+    }
+    val topReason = topIdx.takeIf { it >= 0 }?.let { labels[it] }
+
+    val criesCount = cries.count { inDay(it.timestamp) }
+    val prevCries = cries.count { it.timestamp in prevStart until dayStart }
+    val criesComparisonText = if (criesCount > 0 || prevCries > 0) {
+        criesComparisonForDay(criesCount - prevCries, prevCries)
+    } else {
+        null
+    }
+
+    return DaySummary(
+        cries = criesCount,
+        feeds = completedFeedings.count { inDay(it.timestamp) },
+        sleeps = completedSleeps.count { inDay(it.timestamp) },
+        diapers = diapers.count { inDay(it.timestamp) },
+        poops = diapers.count {
+            inDay(it.timestamp) && DiaperType.fromNameOrNull(it.type)?.hasStool == true
+        },
+        tummy = tummy.count { inDay(it.timestamp) },
+        tummyGoal = TummyTime.dailyGoal(profile.ageDays(dayStart + dayMs / 2)),
+        topReason = topReason,
+        criesYesterdayComparison = criesComparisonText,
+    )
+}
+
+private fun collectLoggedDays(
+    cries: List<CryEvent>,
+    feedings: List<FeedingEvent>,
+    sleeps: List<SleepEvent>,
+    diapers: List<DiaperEvent>,
+    tummy: List<TummyTimeEvent>,
+): Set<Long> {
+    val days = mutableSetOf<Long>()
+    cries.forEach { days += startOfDay(it.timestamp) }
+    feedings.forEach { days += startOfDay(it.timestamp) }
+    sleeps.forEach { days += startOfDay(it.timestamp) }
+    diapers.forEach { days += startOfDay(it.timestamp) }
+    tummy.forEach { days += startOfDay(it.timestamp) }
+    return days
+}
+
 private fun feedingEndedAt(feeding: FeedingEvent): Long =
     feeding.timestamp + feeding.durationMs.coerceAtLeast(0L)
 
-private fun buildTimeline(
+private fun sleepEndedAt(sleep: SleepEvent): Long =
+    sleep.timestamp + sleep.durationMs.coerceAtLeast(0L)
+
+private fun buildDayTimeline(
     cries: List<CryEvent>,
     feedings: List<FeedingEvent>,
+    sleeps: List<SleepEvent>,
     diapers: List<DiaperEvent>,
     tummy: List<TummyTimeEvent>,
-    now: Long,
+    dayStart: Long,
 ): List<Line> {
-    val entries = ArrayList<Pair<Long, Line>>(cries.size + feedings.size + diapers.size + tummy.size)
-    cries.forEach { entries += it.timestamp to Line.Cry(it) }
-    feedings.forEach { entries += it.timestamp to Line.Feed(it) }
-    diapers.forEach { entries += it.timestamp to Line.Diaper(it) }
-    tummy.forEach { entries += it.timestamp to Line.Tummy(it) }
-    entries.sortByDescending { it.first }
+    val dayEnd = dayStart + 86_400_000L
+    fun inDay(ts: Long) = ts in dayStart until dayEnd
 
-    val out = ArrayList<Line>()
-    val today = startOfDay(now)
-    var lastDay = Long.MIN_VALUE
-    for ((ts, line) in entries.take(300)) {
-        val ds = startOfDay(ts)
-        if (ds != lastDay) {
-            out += Line.Header(dayLabel(ds, today))
-            lastDay = ds
-        }
-        out += line
-    }
-    return out
+    val entries = ArrayList<Pair<Long, Line>>()
+    cries.filter { inDay(it.timestamp) }.forEach { entries += it.timestamp to Line.Cry(it) }
+    feedings.filter { inDay(it.timestamp) }.forEach { entries += it.timestamp to Line.Feed(it) }
+    sleeps.filter { inDay(it.timestamp) }.forEach { entries += it.timestamp to Line.Sleep(it) }
+    diapers.filter { inDay(it.timestamp) }.forEach { entries += it.timestamp to Line.Diaper(it) }
+    tummy.filter { inDay(it.timestamp) }.forEach { entries += it.timestamp to Line.Tummy(it) }
+    // Read the day as it happened: earliest care event first, then the next one.
+    entries.sortBy { it.first }
+    return entries.map { it.second }
 }
 
 private fun dayLabel(dayStart: Long, todayStart: Long): String = when (dayStart) {
-    todayStart -> if (currentAppLang == AppLang.EN) "Today" else "Σήμερα"
-    todayStart - 86_400_000L -> if (currentAppLang == AppLang.EN) "Yesterday" else "Χθες"
+    todayStart -> translate(currentAppLang, "Σήμερα")
+    todayStart - 86_400_000L -> translate(currentAppLang, "Χθες")
     else -> dayHeaderFormat().format(Date(dayStart)).replaceFirstChar { it.uppercase() }
 }
 

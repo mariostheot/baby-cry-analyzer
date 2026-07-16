@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.BabyChangingStation
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.GraphicEq
@@ -93,6 +94,7 @@ fun HomeScreen(
     onSoothe: () -> Unit,
     onSafety: () -> Unit,
     onTummyGuide: () -> Unit,
+    onOpenStats: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.home.collectAsState()
@@ -101,7 +103,9 @@ fun HomeScreen(
     val soothing by viewModel.soothing.collectAsState()
     val playback by viewModel.playback.collectAsState()
     val feeding by viewModel.feeding.collectAsState()
+    val sleep by viewModel.sleep.collectAsState()
     val tummy by viewModel.recentTummy.collectAsState()
+    val careInsights by viewModel.careInsights.collectAsState()
     var showDiaper by remember { mutableStateOf(false) }
 
     Column(
@@ -195,6 +199,24 @@ fun HomeScreen(
             )
             QuickAction(
                 modifier = Modifier.weight(1f),
+                icon = if (sleep.eventId == null) Icons.Filled.Bedtime else Icons.Filled.Stop,
+                label = if (sleep.eventId == null) {
+                    tr("Έναρξη ύπνου")
+                } else {
+                    "${tr("Τέλος ύπνου")}\n${feedingDurationLabel(sleep.elapsedSeconds)}"
+                },
+                onClick = { viewModel.toggleSleep() },
+            )
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            QuickAction(
+                modifier = Modifier.weight(1f),
                 icon = Icons.Filled.BabyChangingStation,
                 label = tr("Αλλαγή πάνας"),
                 onClick = { showDiaper = true },
@@ -214,6 +236,17 @@ fun HomeScreen(
             onLog = { viewModel.logTummy() },
             onOpenGuide = onTummyGuide,
         )
+
+        val insightSummary = careInsights.summary
+        val primaryInsight = insightSummary?.primaryInsight
+        if (!careInsights.loading && primaryInsight != null && insightSummary != null) {
+            Spacer(Modifier.height(12.dp))
+            HomeCareInsightCard(
+                primaryInsight = primaryInsight,
+                disclaimer = insightSummary.disclaimer,
+                onOpenStats = onOpenStats,
+            )
+        }
 
         Spacer(Modifier.height(8.dp))
         TextButton(onClick = onSafety) { Text(tr("Πότε να ανησυχήσω;")) }

@@ -401,6 +401,9 @@ private fun AppRootContent(
                             onSoothe = { overlay = Overlay.SOOTHE },
                             onSafety = { overlay = Overlay.SAFETY },
                             onTummyGuide = { overlay = Overlay.TUMMY },
+                            onOpenStats = {
+                                scope.launch { pagerState.animateScrollToPage(Tab.STATS.ordinal) }
+                            },
                         )
                         Tab.HISTORY -> HistoryScreen(viewModel)
                         Tab.LIBRARY -> LibraryScreen(viewModel = viewModel)

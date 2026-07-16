@@ -53,7 +53,11 @@ private val EN: Map<String, String> = mapOf(
     "Τάισμα" to "Feeding",
     "Έναρξη ταΐσματος" to "Start feeding",
     "Τέλος ταΐσματος" to "Stop feeding",
+    "Ύπνος" to "Sleep",
+    "Έναρξη ύπνου" to "Start sleep",
+    "Τέλος ύπνου" to "Stop sleep",
     "Άρχισε το τάισμα. Πάτησε ξανά όταν τελειώσει." to "Feeding started. Tap again when it ends.",
+    "Άρχισε ο ύπνος. Πάτησε ξανά όταν ξυπνήσει." to "Sleep started. Tap again when baby wakes.",
     "Ηρέμησέ το" to "Soothe",
     "Πότε να ανησυχήσω;" to "When should I worry?",
     "Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή. Αν ανησυχείς για την υγεία του μωρού, ρώτησε παιδίατρο." to
@@ -138,14 +142,14 @@ private val EN: Map<String, String> = mapOf(
 
     // ---- History screen ----
     "Καθαρισμός" to "Clear",
-    "Δεν υπάρχουν ακόμα καταγραφές. Πάτα «Άκου το μωρό» ή κατέγραψε ένα τάισμα." to
-        "No records yet. Tap \"Listen to baby\" or log a feeding.",
+    "Δεν υπάρχουν ακόμα καταγραφές. Πάτα «Άκου το μωρό» ή κατέγραψε ένα τάισμα ή ύπνο." to
+        "No records yet. Tap \"Listen to baby\" or log a feeding or sleep.",
     "Χρονολόγιο" to "Timeline",
     "Πάτησε μια καταγραφή για να ορίσεις/διορθώσεις την αιτία." to
         "Tap a record to set or correct the cause.",
     "Καθαρισμός ιστορικού;" to "Clear history?",
-    "Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα (μαζί με τις αποθηκευμένες ηχογραφήσεις), τα ταΐσματα, οι αλλαγές πάνας, το tummy time και τα γραφήματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται." to
-        "All recorded cries (including saved recordings), feedings, diaper changes, tummy time, and charts will be deleted. What the model learned from you will NOT be affected.",
+    "Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα (μαζί με τις αποθηκευμένες ηχογραφήσεις), τα ταΐσματα, οι ύπνοι, οι αλλαγές πάνας, το tummy time και τα γραφήματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται." to
+        "All recorded cries (including saved recordings), feedings, sleep sessions, diaper changes, tummy time, and charts will be deleted. What the model learned from you will NOT be affected.",
     "Διαγραφή" to "Delete",
     "Διαγραφή κλάματος;" to "Delete this cry?",
     "Θα διαγραφεί οριστικά αυτή η καταγραφή κλάματος (και η ηχογράφησή της). Δεν μπορεί να αναιρεθεί." to
@@ -155,6 +159,8 @@ private val EN: Map<String, String> = mapOf(
         "Pick what it actually was. Stats update and the model learns.",
     "Κλείσιμο" to "Close",
     "Τελευταίο τάισμα" to "Last feeding",
+    "Τελευταίος ύπνος" to "Last sleep",
+    "κοιμάται τώρα" to "sleeping now",
     "δεν έχει καταγραφεί" to "not recorded",
     "ίσως πεινάει" to "may be hungry",
     "Τελευταίο κλάμα" to "Last cry",
@@ -168,6 +174,9 @@ private val EN: Map<String, String> = mapOf(
     "Μέσο διάστημα ταϊσμάτων" to "Average feeding interval",
     "Κλάματα ανά ημέρα (τελευταίες 7)" to "Cries per day (last 7)",
     "Χθες" to "Yesterday",
+    "Δεν υπάρχουν καταγραφές αυτή την ημέρα." to "No records for this day.",
+    "Προηγούμενη ημέρα" to "Previous day",
+    "Επόμενη ημέρα" to "Next day",
 
     // ---- Stats screen ----
     "Πώς τα πάει" to "How it's doing",
@@ -215,6 +224,10 @@ private val EN: Map<String, String> = mapOf(
         "Small patterns that stand out from the last few days.",
     "Δεν υπάρχει ακόμη αρκετό μοτίβο. Με λίγες ακόμη μέρες χρήσης θα εμφανίζονται παρατηρήσεις εδώ." to
         "No clear pattern yet. With a few more days of use, insights will appear here.",
+    "Από τις καταγραφές σου" to "From your logs",
+    "Δες περισσότερα στα Στατιστικά" to "See more in Stats",
+    "Μοτίβα από ύπνο, ταΐσματα, πάνες και κλάματα — παρατηρητικά, όχι ιατρικά." to
+        "Patterns from sleep, feeds, diapers and cries — observational, not medical.",
 
     // ---- Settings screen ----
     "Μωρά" to "Babies",
@@ -263,8 +276,8 @@ private val EN: Map<String, String> = mapOf(
         "Forgets what it learned from you. History & stats are NOT deleted.",
     "Ιστορικό & στατιστικά" to "History & stats",
     "Καθαρισμός ιστορικού & στατιστικών" to "Clear history & stats",
-    "Μηδενίζει κλάματα, ηχογραφήσεις, ταΐσματα, αλλαγές πάνας, tummy time και γραφήματα. Η εκμάθηση παραμένει." to
-        "Clears cries, recordings, feedings, diaper changes, tummy time, and charts. Learning remains.",
+    "Μηδενίζει κλάματα, ηχογραφήσεις, ταΐσματα, ύπνους, αλλαγές πάνας, tummy time και γραφήματα. Η εκμάθηση παραμένει." to
+        "Clears cries, recordings, feedings, sleep sessions, diaper changes, tummy time, and charts. Learning remains.",
     "Μηδενισμός προσωποποίησης;" to "Reset personalization?",
     "Το μοντέλο θα ξεχάσει όσα έμαθε από τις διορθώσεις σου και θα επιστρέψει στη βασική του κατάσταση. Το ιστορικό & τα στατιστικά μένουν." to
         "The model will forget what it learned from your corrections and return to its default state. History & stats remain.",
@@ -365,18 +378,22 @@ private val EN: Map<String, String> = mapOf(
     "Καταγράφηκε το τάισμα." to "Feeding logged.",
     "Ενημερώθηκε η διάρκεια ταΐσματος." to "Feeding duration updated.",
     "Ενημερώθηκε το τάισμα." to "Feeding updated.",
+    "Ενημερώθηκε ο ύπνος." to "Sleep updated.",
     "Διάρκεια ταΐσματος" to "Feeding duration",
     "Επεξεργασία ταΐσματος" to "Edit feeding",
+    "Επεξεργασία ύπνου" to "Edit sleep",
     "Ώρα έναρξης" to "Start time",
     "Ώρα λήξης" to "End time",
     "Ώρα" to "Hour",
-    "Πάτησε μια καταγραφή για να διορθώσεις την αιτία ή τη διάρκεια ταΐσματος." to
-        "Tap a record to correct the cause or feeding duration.",
+    "Πάτησε μια καταγραφή για να διορθώσεις την αιτία ή τη διάρκεια ταΐσματος/ύπνου." to
+        "Tap a record to correct the cause or feeding/sleep duration.",
     "Λεπτά" to "Minutes",
     "Δευτερόλεπτα" to "Seconds",
     "Αποθήκευση" to "Save",
     "Το τάισμα είναι σε εξέλιξη" to "Feeding is in progress",
+    "Ο ύπνος είναι σε εξέλιξη" to "Sleep is in progress",
     "Πάτησε το κουμπί στην αρχική για να το σταματήσεις." to "Use the Home button to stop it.",
+    "Πάτησε το κουμπί στην αρχική για να τον σταματήσεις." to "Use the Home button to stop it.",
     "Χρόνος ταΐσματος τελευταίου 24ώρου" to "Feeding time in the last 24 hours",
     "τώρα" to "now",
     "ταΐζεται τώρα" to "feeding now",

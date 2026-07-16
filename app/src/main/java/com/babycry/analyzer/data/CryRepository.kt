@@ -2,6 +2,13 @@ package com.babycry.analyzer.data
 
 import android.content.Context
 import android.util.Base64
+import com.babycry.analyzer.insights.CareCryRecord
+import com.babycry.analyzer.insights.CareDiaperRecord
+import com.babycry.analyzer.insights.CareFeedRecord
+import com.babycry.analyzer.insights.CareInsightEngine
+import com.babycry.analyzer.insights.CareInsightInput
+import com.babycry.analyzer.insights.CareInsightSummary
+import com.babycry.analyzer.insights.CareSleepRecord
 import com.babycry.analyzer.ml.CryAnalysis
 import com.babycry.analyzer.ml.CryAnalyzer
 import com.babycry.analyzer.model.BabyProfile
@@ -54,6 +61,7 @@ class CryRepository private constructor(
     private val feedingDao = db.feedingDao()
     private val diaperDao = db.diaperDao()
     private val tummyDao = db.tummyDao()
+    private val sleepDao = db.sleepDao()
     private val profilePrefs = context.getSharedPreferences("profile", Context.MODE_PRIVATE)
     private val clipStore = ClipStore(context)
 
@@ -70,6 +78,7 @@ class CryRepository private constructor(
     fun recentFeedings(profileId: String = activeProfileId()): Flow<List<FeedingEvent>> = feedingDao.recent(profileId)
     fun recentDiapers(profileId: String = activeProfileId()): Flow<List<DiaperEvent>> = diaperDao.recent(profileId)
     fun recentTummy(profileId: String = activeProfileId()): Flow<List<TummyTimeEvent>> = tummyDao.recent(profileId)
+    fun recentSleep(profileId: String = activeProfileId()): Flow<List<SleepEvent>> = sleepDao.recent(profileId)
 
     suspend fun assignLegacyDataToActiveProfile() = withContext(Dispatchers.IO) {
         val profileId = activeProfileId()
@@ -79,6 +88,7 @@ class CryRepository private constructor(
         feedingDao.assignLegacy(profileId)
         diaperDao.assignLegacy(profileId)
         tummyDao.assignLegacy(profileId)
+        sleepDao.assignLegacy(profileId)
     }
 
     fun isPersonalizationEnabled(): Boolean = profilePrefs.getBoolean(PERSONALIZATION_ON, true)
@@ -355,6 +365,43 @@ class CryRepository private constructor(
         tummyDao.insert(TummyTimeEvent(profileId = activeProfileId(), timestamp = System.currentTimeMillis()))
     }
 
+    /** Starts one timed sleep session, or returns the one already running for this baby. */
+    suspend fun startSleep(profileId: String = activeProfileId()): SleepEvent = withContext(Dispatchers.IO) {
+        sleepDao.startIfNone(
+            SleepEvent(
+                profileId = profileId,
+                timestamp = System.currentTimeMillis(),
+                durationMs = -1,
+            ),
+        )
+    }
+
+    /** Stops the currently running sleep session and returns it with its measured duration. */
+    suspend fun stopSleep(profileId: String = activeProfileId()): SleepEvent? = withContext(Dispatchers.IO) {
+        val active = sleepDao.inProgress(profileId) ?: return@withContext null
+        val durationMs = (System.currentTimeMillis() - active.timestamp).coerceAtLeast(0L)
+        if (sleepDao.complete(active.id, profileId, durationMs) == 0) return@withContext null
+        active.copy(durationMs = durationMs)
+    }
+
+    /** Allows a parent to correct a completed sleep session's start time and measured duration. */
+    suspend fun updateSleep(
+        eventId: Long,
+        startedAt: Long,
+        durationMs: Long,
+        profileId: String = activeProfileId(),
+    ): Boolean = withContext(Dispatchers.IO) {
+        sleepDao.updateCompleted(
+            id = eventId,
+            profileId = profileId,
+            timestamp = startedAt,
+            durationMs = durationMs.coerceAtLeast(0L),
+        ) > 0
+    }
+
+    suspend fun activeSleep(profileId: String = activeProfileId()): SleepEvent? =
+        withContext(Dispatchers.IO) { sleepDao.inProgress(profileId) }
+
     // ---- Tummy time: age-based daily goal + reminder --------------------------
 
     /** Recommended tummy-time sessions per day for the active baby's age. */
@@ -439,6 +486,49 @@ class CryRepository private constructor(
         analyzer.personalization.reset()
         analyzer.personalization.updatePrototypes(emptyList())
     }
+
+    /**
+     * Local, evidence-gated care-pattern observations for the active baby. Loads the full
+     * profile-scoped histories (completed feeds/diapers/sleeps and detected cries) and runs
+     * the pure [CareInsightEngine] — no derived records are stored.
+     */
+    suspend fun careInsights(profileId: String = activeProfileId()): CareInsightSummary =
+        withContext(Dispatchers.Default) {
+            val lang = getLanguage()
+            // A zero duration is an unknown/legacy marker, not a completed timed session.
+            val feedings = feedingDao.allList(profileId).filter { it.durationMs > 0L }
+            val diapers = diaperDao.allList(profileId)
+            val sleeps = sleepDao.allList(profileId).filter { it.durationMs > 0L }
+            val cries = cryDao.allEvents(profileId)
+
+            CareInsightEngine.compute(
+                input = CareInsightInput(
+                    feeds = feedings.map { CareFeedRecord(it.timestamp, it.durationMs) },
+                    diapers = diapers.map { event ->
+                        val type = DiaperType.fromNameOrNull(event.type)
+                        CareDiaperRecord(
+                            timestamp = event.timestamp,
+                            hasStool = type?.hasStool == true,
+                            isWet = type == DiaperType.WET || type == DiaperType.MIXED,
+                        )
+                    },
+                    sleeps = sleeps.map { CareSleepRecord(it.timestamp, it.durationMs) },
+                    cries = cries.map { event ->
+                        CareCryRecord(
+                            timestamp = event.timestamp,
+                            cryDetected = event.cryDetected,
+                            confirmedReason = event.confirmedIndex
+                                ?.takeIf { it in labels.indices }
+                                ?.let { labels[it] },
+                            predictedReason = event.predictedIndex
+                                .takeIf { it in labels.indices }
+                                ?.let { labels[it] },
+                        )
+                    },
+                ),
+                lang = lang,
+            )
+        }
 
     suspend fun stats(): StatsSummary = withContext(Dispatchers.Default) {
         val profileId = activeProfileId()
@@ -619,6 +709,7 @@ class CryRepository private constructor(
         feedingDao.clear(profileId)
         diaperDao.clear(profileId)
         tummyDao.clear(profileId)
+        sleepDao.clear(profileId)
     }
 
     private fun newProfileId(): String = java.util.UUID.randomUUID().toString()
@@ -1039,7 +1130,7 @@ class CryRepository private constructor(
 
     suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
         val root = JSONObject()
-        root.put("version", 5)
+        root.put("version", 6)
         root.put("exportedAt", System.currentTimeMillis())
 
         val profile = getProfile()
@@ -1143,6 +1234,17 @@ class CryRepository private constructor(
         }
         root.put("tummy", tummyArr)
 
+        val sleepArr = JSONArray()
+        for (se in sleepDao.allListAllProfiles()) {
+            sleepArr.put(JSONObject().apply {
+                put("profileId", se.profileId)
+                put("timestamp", se.timestamp)
+                put("durationMs", se.durationMs)
+                se.note?.let { put("note", it) }
+            })
+        }
+        root.put("sleeps", sleepArr)
+
         val pendingArr = JSONArray()
         for (p in getProfiles()) {
             for (eventId in pendingEventIds(p.id)) {
@@ -1193,6 +1295,7 @@ class CryRepository private constructor(
         feedingDao.clearAllProfiles()
         diaperDao.clearAllProfiles()
         tummyDao.clearAllProfiles()
+        sleepDao.clearAllProfiles()
         // Old clips are keyed by the previous event ids, which no longer match.
         clipStore.clearAll()
         clearAllPending()
@@ -1293,6 +1396,19 @@ class CryRepository private constructor(
                     TummyTimeEvent(
                         profileId = o.optString("profileId", activeProfileId()),
                         timestamp = o.getLong("timestamp"),
+                    )
+                )
+            }
+        }
+        root.optJSONArray("sleeps")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                sleepDao.insert(
+                    SleepEvent(
+                        profileId = o.optString("profileId", activeProfileId()),
+                        timestamp = o.getLong("timestamp"),
+                        durationMs = o.optLong("durationMs", 0L),
+                        note = if (o.has("note")) o.getString("note") else null,
                     )
                 )
             }

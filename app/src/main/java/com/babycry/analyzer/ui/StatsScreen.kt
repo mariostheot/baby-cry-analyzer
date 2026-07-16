@@ -35,8 +35,6 @@ import com.babycry.analyzer.data.DiaperEvent
 import com.babycry.analyzer.data.FeedingEvent
 import com.babycry.analyzer.data.TummyTimeEvent
 import com.babycry.analyzer.model.DiaperType
-import com.babycry.analyzer.ui.i18n.AppLang
-import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.tr
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -54,6 +52,7 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val feedings by viewModel.recentFeedings.collectAsState()
     val diapers by viewModel.recentDiapers.collectAsState()
     val tummy by viewModel.recentTummy.collectAsState()
+    val careInsights by viewModel.careInsights.collectAsState()
 
     LaunchedEffect(language, profile.id, events, feedbackCount) { stats = viewModel.loadStats() }
 
@@ -133,7 +132,7 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
         )
 
         Spacer(Modifier.height(18.dp))
-        PatternAlertsCard(cries = events.filter { it.cryDetected })
+        CareInsightsStatsSection(state = careInsights)
 
         Spacer(Modifier.height(18.dp))
         SectionHeader(
@@ -242,28 +241,6 @@ private fun BabyDayTimelineCard(
 }
 
 @Composable
-private fun PatternAlertsCard(cries: List<CryEvent>) {
-    SectionHeader(
-        tr("Έξυπνες παρατηρήσεις"),
-        tr("Μικρά μοτίβα που ξεχωρίζουν από τις τελευταίες μέρες."),
-    )
-    Spacer(Modifier.height(8.dp))
-    val alerts = remember(cries, currentAppLang) { cryPatternAlerts(cries) }
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            if (alerts.isEmpty()) {
-                Caption(tr("Δεν υπάρχει ακόμη αρκετό μοτίβο. Με λίγες ακόμη μέρες χρήσης θα εμφανίζονται παρατηρήσεις εδώ."))
-            } else {
-                alerts.forEachIndexed { i, alert ->
-                    Text("• $alert", style = MaterialTheme.typography.bodyMedium)
-                    if (i < alerts.lastIndex) Spacer(Modifier.height(6.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun SectionHeader(title: String, subtitle: String) {
     Text(title, style = MaterialTheme.typography.titleLarge)
     Spacer(Modifier.height(2.dp))
@@ -284,43 +261,6 @@ private fun startOfToday(): Long = Calendar.getInstance().apply {
 }.timeInMillis
 
 private fun hourMinute(ts: Long): String = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ts))
-
-private fun cryPatternAlerts(cries: List<CryEvent>): List<String> {
-    if (cries.size < 6) return emptyList()
-    val now = System.currentTimeMillis()
-    val day = 86_400_000L
-    val recentStart = now - 3 * day
-    val previousStart = now - 6 * day
-    val recent = cries.filter { it.timestamp >= recentStart }
-    val previous = cries.filter { it.timestamp in previousStart until recentStart }
-    if (recent.size < 3) return emptyList()
-
-    val recentByWindow = IntArray(8)
-    val previousByWindow = IntArray(8)
-    val cal = Calendar.getInstance()
-    fun addToBucket(e: CryEvent, arr: IntArray) {
-        cal.timeInMillis = e.timestamp
-        val bucket = (cal.get(Calendar.HOUR_OF_DAY) / 3).coerceIn(0, 7)
-        arr[bucket]++
-    }
-    recent.forEach { addToBucket(it, recentByWindow) }
-    previous.forEach { addToBucket(it, previousByWindow) }
-
-    val peak = recentByWindow.indices.maxByOrNull { recentByWindow[it] } ?: return emptyList()
-    val peakCount = recentByWindow[peak]
-    val prevCount = previousByWindow[peak]
-    if (peakCount < 2 || peakCount <= prevCount) return emptyList()
-
-    val from = peak * 3
-    val to = (from + 3).coerceAtMost(24)
-    val window = "%02d:00–%02d:00".format(from, to)
-    return listOf(
-        when (currentAppLang) {
-            AppLang.EN -> "In the last 3 days, cries are clustering around $window ($peakCount times)."
-            AppLang.EL -> "Τις τελευταίες 3 μέρες υπάρχουν περισσότερα κλάματα περίπου $window ($peakCount φορές)."
-        },
-    )
-}
 
 @Composable
 private fun Caption(text: String) {
