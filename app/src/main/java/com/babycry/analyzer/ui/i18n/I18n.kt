@@ -278,6 +278,7 @@ private val EN: Map<String, String> = mapOf(
         "Fill in your baby's details. Age helps the app better estimate the cause of crying (e.g. how often baby gets hungry by age). You can change this anytime in Settings.",
     "Όνομα μωρού" to "Baby's name",
     "Ημερομηνία γέννησης" to "Date of birth",
+    "Γράψε την ημερομηνία ως DD/MM/YYYY." to "Enter the date as DD/MM/YYYY.",
     "Ξεκίνα" to "Get started",
     "Θα το κάνω αργότερα" to "I'll do this later",
 
