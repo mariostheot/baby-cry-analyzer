@@ -110,8 +110,8 @@ private fun printReport(context: Context, web: WebView) {
     val adapter = web.createPrintDocumentAdapter("baby-cry-report")
     printManager.print(
         when (currentAppLang) {
-            AppLang.EN -> "Revekka — Report"
-            AppLang.EL -> "Revekka — Αναφορά"
+            AppLang.EN -> "NiniSense — Report"
+            AppLang.EL -> "NiniSense — Αναφορά"
         },
         adapter,
         PrintAttributes.Builder().build(),

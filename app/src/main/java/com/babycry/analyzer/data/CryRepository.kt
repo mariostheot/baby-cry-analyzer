@@ -765,7 +765,7 @@ class CryRepository private constructor(
         val htmlLang = if (lang == AppLang.EN) "en" else "el"
         sb.append("<!DOCTYPE html><html lang=\"$htmlLang\"><head><meta charset=\"utf-8\">")
         sb.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
-        sb.append("<title>${trS("Αναφορά")} — ${trS("Revekka")}</title><style>")
+        sb.append("<title>${trS("Αναφορά")} — ${trS("NiniSense")}</title><style>")
         sb.append(
             """
             body{font-family:-apple-system,Roboto,Segoe UI,sans-serif;margin:0;background:#f5f4f8;color:#1c1b1f}
@@ -800,7 +800,7 @@ class CryRepository private constructor(
 
         val profileNameForTitle = profile.displayNameNominative(lang == AppLang.EN)
         val title = if (profile.hasName) "${trS("Αναφορά")} — ${esc(profileNameForTitle)}"
-        else "${trS("Αναφορά")} — ${trS("Revekka")}"
+        else "${trS("Αναφορά")} — ${trS("NiniSense")}"
         sb.append("<h1>$title</h1>")
         sb.append("<p class=\"sub\">${trS("Δημιουργήθηκε")} ${esc(df.format(Date()))}</p>")
 
@@ -1030,7 +1030,7 @@ class CryRepository private constructor(
         }
         sb.append("</table>")
 
-        sb.append("<p class=\"foot\">${trS("«Revekka» — Δημιουργήθηκε από τον Μάριο Θεοτή. Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή.")}</p>")
+        sb.append("<p class=\"foot\">${trS("«NiniSense» — Δημιουργήθηκε από τον Μάριο Θεοτή. Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή.")}</p>")
         sb.append("</div></body></html>")
         sb.toString()
     }

@@ -303,7 +303,7 @@ private fun AppRootContent(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(overlay?.let { tr(it.title) } ?: tr("Revekka")) },
+                title = { Text(overlay?.let { tr(it.title) } ?: tr("NiniSense")) },
                 navigationIcon = {
                     if (overlay != null) {
                         IconButton(onClick = { closeOverlay() }) {

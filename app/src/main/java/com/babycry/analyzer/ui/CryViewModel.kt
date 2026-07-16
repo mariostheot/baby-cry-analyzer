@@ -535,10 +535,10 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     fun shareSummary(): String? {
         val analysis = _home.value.analysis ?: return null
         val r = analysis.result
-        if (!r.cryDetected) return trS("«Revekka»: δεν ανιχνεύτηκε καθαρό κλάμα.")
+        if (!r.cryDetected) return trS("«NiniSense»: δεν ανιχνεύτηκε καθαρό κλάμα.")
         val top = r.topReason ?: return null
         val sb = StringBuilder()
-        sb.append(trS("«Revekka» — αποτέλεσμα")).append("\n")
+        sb.append(trS("«NiniSense» — αποτέλεσμα")).append("\n")
         sb.append("${top.emoji} ${trS(top.displayName)} (${(r.confidence * 100).roundToInt()}%)\n\n")
         sb.append(trS("Πιθανές αιτίες:")).append("\n")
         r.scores.take(3).forEach {

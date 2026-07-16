@@ -33,7 +33,7 @@ private val EN: Map<String, String> = mapOf(
     "Αναφορά" to "Report",
     "Ηρέμησε το μωρό" to "Soothe the baby",
     "Πότε να ανησυχήσεις" to "When to worry",
-    "Revekka" to "Revekka",
+    "NiniSense" to "NiniSense",
     "Πίσω" to "Back",
     "Μενού" to "Menu",
     "Χρειάζεται άδεια μικροφώνου για την ηχογράφηση." to "Microphone permission is required for recording.",
@@ -387,8 +387,8 @@ private val EN: Map<String, String> = mapOf(
     "Η προσωποποίηση μηδενίστηκε." to "Personalization reset.",
     "άκυρο αρχείο" to "invalid file",
     "Σφάλμα επαναφοράς:" to "Restore error:",
-    "«Revekka»: δεν ανιχνεύτηκε καθαρό κλάμα." to "\"Revekka\": no clear cry detected.",
-    "«Revekka» — αποτέλεσμα" to "\"Revekka\" — result",
+    "«NiniSense»: δεν ανιχνεύτηκε καθαρό κλάμα." to "\"NiniSense\": no clear cry detected.",
+    "«NiniSense» — αποτέλεσμα" to "\"NiniSense\" — result",
     "Πιθανές αιτίες:" to "Possible causes:",
     "Υπενθυμίσεις επιβεβαίωσης" to "Confirmation reminders",
     "Σε ρωτά λίγο μετά το κλάμα ποια ήταν τελικά η αιτία." to "Asks you shortly after a cry what the cause actually was.",
@@ -417,8 +417,8 @@ private val EN: Map<String, String> = mapOf(
     "Tummy time τελευταίου 24ώρου" to "Tummy time in last 24h",
     "Αν υπάρχουν κόκκινες σημαίες (πυρετός, δυσκολία στην αναπνοή, αφυδάτωση, ασυνήθιστο/επίμονο κλάμα), επικοινώνησε άμεσα με γιατρό." to
         "If there are red flags (fever, breathing difficulty, dehydration, unusual/persistent crying), contact a doctor promptly.",
-    "«Revekka» — Δημιουργήθηκε από τον Μάριο Θεοτή. Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή." to
-        "\"Revekka\" — Created by Mario Theotis. Informational aid, not medical advice.",
+    "«NiniSense» — Δημιουργήθηκε από τον Μάριο Θεοτή. Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή." to
+        "\"NiniSense\" — Created by Mario Theotis. Informational aid, not medical advice.",
 
     // ---- Feedback (result card) ----
     "Ήταν σωστή η εκτίμηση;" to "Was the estimate correct?",
