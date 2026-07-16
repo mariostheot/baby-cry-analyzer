@@ -48,8 +48,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      # Generate the wrapper jar so `gradle`/`./gradlew` both work (the binary jar is
-      # intentionally not committed).
+      # Generate the wrapper jar so this build uses the repository's pinned Gradle version.
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.9
 
@@ -63,9 +62,14 @@ jobs:
           mkdir -p app/src/main/assets
           if gh release download model -p model_bundle.zip -O model_bundle.zip 2>/dev/null; then
             unzip -o model_bundle.zip -d _bundle
-            for f in yamnet.tflite cry_reason.tflite cry_reason_trainable.tflite labels.txt; do
-              src="$(find _bundle -name "$f" | head -n1)"
+            for f in yamnet.tflite cry_reason.tflite cry_reason_trainable.tflite labels.txt metadata.json; do
+              src="$(find _bundle -name "$f" -print -quit)"
               if [ -n "$src" ]; then cp "$src" "app/src/main/assets/$f"; echo "embedded $f"; else echo "WARN: $f missing from bundle"; fi
+            done
+            mkdir -p app/src/androidTest/assets
+            for f in parity_sample.wav parity_expected.json; do
+              src="$(find _bundle -name "$f" -print -quit)"
+              if [ -n "$src" ]; then cp "$src" "app/src/androidTest/assets/$f"; echo "installed parity asset $f"; fi
             done
           else
             echo "WARN: no 'model' release found -> building APK without bundled models."
@@ -117,7 +121,15 @@ jobs:
         env:
           VERSION_CODE: ${{ github.run_number }}
           VERSION_NAME: 1.0.${{ github.run_number }}
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Run YAMNet parity test
+        if: ${{ hashFiles('app/src/androidTest/assets/parity_sample.wav') != '' }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          script: ./gradlew connectedDebugAndroidTest --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

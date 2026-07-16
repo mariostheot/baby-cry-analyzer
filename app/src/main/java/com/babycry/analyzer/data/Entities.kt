@@ -40,6 +40,8 @@ data class FeedbackExample(
     // Default declared here to exactly match the v1->v2 migration's `DEFAULT 0`, so Room's
     // schema check passes on upgrade regardless of Room version.
     @ColumnInfo(defaultValue = "0") val sourceEventId: Long = 0,
+    /** Stable personal test set: never used to train prototypes or the Tier 2 head. */
+    @ColumnInfo(defaultValue = "0") val isValidationHoldout: Boolean = false,
 ) {
     // data class with an array field: override equality on identity to keep Room/data happy.
     override fun equals(other: Any?): Boolean = this === other

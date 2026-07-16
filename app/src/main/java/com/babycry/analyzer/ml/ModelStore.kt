@@ -22,6 +22,7 @@ object ModelStore {
     const val REASON = "cry_reason.tflite"
     const val REASON_TRAINABLE = "cry_reason_trainable.tflite"
     const val LABELS = "labels.txt"
+    const val METADATA = "metadata.json"
 
     fun modelsDir(context: Context): File =
         File(context.getExternalFilesDir(null), "models").apply { mkdirs() }
@@ -62,6 +63,17 @@ object ModelStore {
             ?.mapNotNull { CryReason.fromNameOrNull(it) }
             ?.takeIf { it.isNotEmpty() }
         return mapped ?: CryReason.canonicalOrder
+    }
+
+    /** Training metadata follows the same external-file-over-asset policy as the models. */
+    fun metadata(context: Context): ModelMetadata = ModelMetadata.parse(readText(context, METADATA))
+
+    private fun readText(context: Context, name: String): String? {
+        val ext = externalFile(context, name)
+        if (ext.exists()) return runCatching { ext.readText() }.getOrNull()
+        return runCatching {
+            context.assets.open(name).bufferedReader().use { it.readText() }
+        }.getOrNull()
     }
 
     private fun readLabelLines(context: Context): List<String>? {

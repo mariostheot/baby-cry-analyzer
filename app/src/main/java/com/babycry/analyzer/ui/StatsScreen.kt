@@ -101,6 +101,17 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                         },
                     ),
                 )
+                if (s.validationCount > 0) {
+                    val baseAccuracy = s.validationBaseAccuracy
+                        ?.let { "${(it * 100).roundToInt()}%" } ?: "—"
+                    val personalizedAccuracy = s.validationPersonalizedAccuracy
+                        ?.let { "${(it * 100).roundToInt()}%" } ?: "—"
+                    MetricRow(tr("Σταθερό προσωπικό τεστ"), s.validationCount.toString())
+                    MetricRow(
+                        tr("Χωρίς / με προσαρμογή"),
+                        "$baseAccuracy / $personalizedAccuracy",
+                    )
+                }
             }
         }
         Spacer(Modifier.height(6.dp))
@@ -108,7 +119,8 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
             tr(
                 "• «Φορές που έδωσες απάντηση»: πόσες φορές πάτησες ✓ ή διόρθωσες μια πρόβλεψη.\n" +
                     "• «Σωστές προβλέψεις»: από αυτές, πόσες τις είχε βρει σωστά η εφαρμογή.\n" +
-                    "• «Προσαρμογή στο μωρό σου»: όταν μαζευτούν αρκετές διορθώσεις, το μοντέλο προσαρμόζεται ειδικά στο δικό σου μωρό.",
+                    "• «Προσαρμογή στο μωρό σου»: όταν μαζευτούν αρκετές διορθώσεις, το μοντέλο προσαρμόζεται ειδικά στο δικό σου μωρό.\n" +
+                    "• «Σταθερό προσωπικό τεστ»: οι πρώτες 3 επιβεβαιώσεις ανά αιτία δεν χρησιμοποιούνται για εκπαίδευση, ώστε η σύγκριση να είναι δίκαιη.",
             ),
         )
 
@@ -167,21 +179,6 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                     s.perClassRecall.getOrNull(i)?.let { "${(it * 100).roundToInt()}%" } ?: "—",
                 )
             }
-        }
-
-        Spacer(Modifier.height(18.dp))
-        SectionHeader(
-            tr("Τι μπερδεύει με τι"),
-            tr(
-                "Κάθε γραμμή = η πραγματική αιτία, κάθε στήλη = τι μάντεψε η εφαρμογή. " +
-                    "Τα νούμερα στη διαγώνιο (ίδιο εικονίδιο) είναι τα σωστά· τα υπόλοιπα, τα μπερδέματα.",
-            ),
-        )
-        if (s.confirmedCount == 0) {
-            Caption(tr("Θα εμφανιστεί μόλις αρχίσεις να δίνεις διορθώσεις."))
-        } else {
-            Spacer(Modifier.height(8.dp))
-            ConfusionMatrix(s)
         }
 
         Spacer(Modifier.height(16.dp))
@@ -370,50 +367,5 @@ private fun MetricRow(label: String, value: String) {
     ) {
         Text(label, style = MaterialTheme.typography.bodyLarge)
         Text(value, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-    }
-}
-
-@Composable
-private fun ConfusionMatrix(s: StatsSummary) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp)) {
-            Row(Modifier.fillMaxWidth()) {
-                Box(Modifier.weight(1.2f)) { Text("", style = MaterialTheme.typography.bodyMedium) }
-                s.labels.forEach { r ->
-                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        Text(r.emoji, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-            Spacer(Modifier.height(4.dp))
-            s.labels.forEachIndexed { i, rowReason ->
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(28.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(Modifier.weight(1.2f)) {
-                        Text(rowReason.emoji, style = MaterialTheme.typography.bodyMedium)
-                    }
-                    for (j in s.labels.indices) {
-                        val count = s.confusion.getOrNull(i)?.getOrNull(j) ?: 0
-                        Box(
-                            Modifier.weight(1f),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                count.toString(),
-                                style = MaterialTheme.typography.bodyMedium,
-                                textAlign = TextAlign.Center,
-                                fontWeight = if (i == j) FontWeight.Bold else FontWeight.Normal,
-                                color = if (i == j) MaterialTheme.colorScheme.secondary
-                                else MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
-                }
-            }
-        }
     }
 }

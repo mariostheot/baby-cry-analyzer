@@ -10,6 +10,7 @@ Also verifies Python-vs-TFLite parity here (both must contain the exact same mat
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -68,12 +69,20 @@ def run(config: dict, embedder, sample_path: Optional[str] = None) -> None:
     }))
 
     tflite_emb = _tflite_embedding(bundle / "yamnet.tflite", wave)
-    if tflite_emb is not None:
-        cos = float(np.dot(emb, tflite_emb) /
-                    (np.linalg.norm(emb) * np.linalg.norm(tflite_emb) + 1e-9))
-        max_abs = float(np.max(np.abs(emb - tflite_emb)))
-        print(f"[parity] python-vs-tflite cosine={cos:.5f} max_abs_diff={max_abs:.5f}")
+    if tflite_emb is None:
+        raise RuntimeError("YAMNet parity failed: exported TFLite embedding could not be read")
+    cos = float(np.dot(emb, tflite_emb) /
+                (np.linalg.norm(emb) * np.linalg.norm(tflite_emb) + 1e-9))
+    max_abs = float(np.max(np.abs(emb - tflite_emb)))
+    print(f"[parity] python-vs-tflite cosine={cos:.5f} max_abs_diff={max_abs:.5f}")
+    if cos < 0.99:
+        raise RuntimeError(
+            f"YAMNet parity failed: cosine={cos:.5f}; refusing to export a mismatched bundle"
+        )
 
     print("[parity] wrote parity_sample.wav + parity_expected.json to the bundle.")
-    print("[parity] To run the Android parity test, copy both into "
-          "app/src/androidTest/assets/ and remove @Ignore from YamnetParityTest.")
+    # export_all() creates the ZIP before this post-export check runs; recreate it so the
+    # Android CI receives the golden files too.
+    shutil.make_archive(str((artifacts / "model_bundle").with_suffix("")), "zip", bundle)
+    print("[parity] Both files are included in model_bundle.zip; CI copies them into Android "
+          "test assets and runs YamnetParityTest when an emulator is available.")

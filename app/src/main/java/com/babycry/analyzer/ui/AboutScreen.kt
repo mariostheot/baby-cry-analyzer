@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import com.babycry.analyzer.ui.i18n.AppLang
 import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.tr
+import com.babycry.analyzer.ml.ModelStore
 
 @Composable
 fun AboutScreen(modifier: Modifier = Modifier) {
@@ -42,6 +43,7 @@ fun AboutScreen(modifier: Modifier = Modifier) {
             },
         )
     }
+    val modelVersion = remember { ModelStore.metadata(ctx) }
     val year = remember { java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) }
 
     Column(
@@ -64,6 +66,13 @@ fun AboutScreen(modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
         )
+        if (modelVersion.modelVersion != "unknown") {
+            Text(
+                tr("Μοντέλο") + ": ${modelVersion.modelVersion}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+        }
         Spacer(Modifier.height(6.dp))
         Text(
             tr("Δημιουργήθηκε από τον Μάριο Θεοτή"),

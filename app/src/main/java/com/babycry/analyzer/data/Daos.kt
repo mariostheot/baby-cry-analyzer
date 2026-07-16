@@ -60,6 +60,15 @@ interface FeedbackDao {
     @Query("SELECT COUNT(*) FROM feedback_examples WHERE profileId = :profileId")
     suspend fun countNow(profileId: String): Int
 
+    @Query(
+        "SELECT COUNT(*) FROM feedback_examples WHERE profileId = :profileId " +
+            "AND labelIndex = :labelIndex AND isValidationHoldout = 1",
+    )
+    suspend fun validationCount(profileId: String, labelIndex: Int): Int
+
+    @Query("SELECT isValidationHoldout FROM feedback_examples WHERE sourceEventId = :eventId LIMIT 1")
+    suspend fun validationForEvent(eventId: Long): Boolean?
+
     /** Remove any example(s) that came from a given cry, so a correction can replace them. */
     @Query("DELETE FROM feedback_examples WHERE sourceEventId = :eventId")
     suspend fun deleteByEvent(eventId: Long)
@@ -72,6 +81,9 @@ interface FeedbackDao {
 
     @Query("DELETE FROM feedback_examples WHERE profileId = :profileId")
     suspend fun clear(profileId: String)
+
+    @Query("DELETE FROM feedback_examples WHERE profileId = :profileId AND isValidationHoldout = 0")
+    suspend fun clearTraining(profileId: String)
 }
 
 @Dao

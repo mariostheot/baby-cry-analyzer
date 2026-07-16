@@ -36,6 +36,7 @@ class CryAnalyzer(context: Context) {
     private var classifier: ReasonClassifier? = null
     private var trainer: OnDeviceTrainer? = null
     private val heuristic = HeuristicClassifier()
+    private val metadata = ModelStore.metadata(appContext)
 
     /** Class order for the active engine (model labels, or canonical for heuristic). */
     val labels: List<CryReason>
@@ -93,11 +94,11 @@ class CryAnalyzer(context: Context) {
         val head = classifier!!
         val (embedding, gate) = embedder.embed(waveform)
 
-        if (gate < GATE_THRESHOLD) {
+        if (gate < metadata.gateThreshold) {
             return CryAnalysis(AnalysisResult.noCry(AnalysisEngine.MODEL), embedding, gate, false)
         }
 
-        var probs = head.classify(embedding)
+        var probs = metadata.calibrate(head.classify(embedding))
         if (personalizationEnabled) {
             probs = personalization.personalizedProbs(probs, embedding, useTier2)
         }
@@ -106,7 +107,7 @@ class CryAnalyzer(context: Context) {
         val scores = toSortedScores(probs, head.labels)
         val confidence = scores.firstOrNull()?.probability ?: 0f
         val margin = confidence - (scores.getOrNull(1)?.probability ?: 0f)
-        val uncertain = confidence < CONFIDENCE_THRESHOLD || margin < MARGIN_THRESHOLD
+        val uncertain = confidence < metadata.confidenceThreshold || margin < metadata.marginThreshold
 
         val result = AnalysisResult(
             cryDetected = true,
@@ -151,11 +152,20 @@ class CryAnalyzer(context: Context) {
         trainer?.close()
     }
 
+    /**
+     * Scores a fixed confirmed embedding without context. It is used only for the personal
+     * holdout report; the holdouts themselves are excluded from personalization training.
+     */
+    fun comparePersonalization(embedding: FloatArray): Pair<Int, Int>? {
+        val head = classifier ?: return null
+        val base = metadata.calibrate(head.classify(embedding))
+        val personalized = personalization.personalizedProbs(base, embedding, useTier2 = true)
+        return base.indices.maxByOrNull { base[it] }!! to
+            personalized.indices.maxByOrNull { personalized[it] }!!
+    }
+
     private companion object {
         const val TAG = "CryAnalyzer"
-        const val GATE_THRESHOLD = 0.30f      // matches ml-training config gate.threshold
         const val HEURISTIC_GATE = 0.30f
-        const val CONFIDENCE_THRESHOLD = 0.50f
-        const val MARGIN_THRESHOLD = 0.15f
     }
 }

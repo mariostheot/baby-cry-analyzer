@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DiaperEvent::class,
         TummyTimeEvent::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -85,6 +85,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // v6 -> v7: reserve a small, permanent per-class holdout set. These confirmed clips
+        // stay out of personalization training, making before/after metrics honest.
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE feedback_examples ADD COLUMN isValidationHoldout INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -97,6 +107,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_3_4,
                     MIGRATION_4_5,
                     MIGRATION_5_6,
+                    MIGRATION_6_7,
                 ).build()
                     .also { instance = it }
             }

@@ -13,6 +13,7 @@ clip, perturbing the waveform, and re-embedding with YAMNet.
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import json
 import os
 import random
@@ -215,6 +216,10 @@ def train(config: dict, embedder: Optional[YamnetEmbedder] = None) -> dict:
     final.save(artifacts / "cry_reason_head.keras")
 
     metadata = {
+        "model_version": f"cry-head-{_dt.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}",
+        "config_sha256": hashlib.sha256(
+            json.dumps(config, sort_keys=True).encode("utf-8")
+        ).hexdigest(),
         "classes": classes,
         "enum_labels": [c.upper() for c in classes],
         "input_dim": input_dim,
@@ -223,6 +228,8 @@ def train(config: dict, embedder: Optional[YamnetEmbedder] = None) -> dict:
         "sample_rate": config["sample_rate"],
         "pooling": config["features"]["pooling"],
         "gate_threshold": config["gate"]["threshold"],
+        "confidence_threshold": config["train"].get("confidence_threshold", 0.50),
+        "margin_threshold": config["train"].get("margin_threshold", 0.15),
         "gate_class_name": config["gate"]["infant_cry_class_name"],
         "seed": config["seed"],
         "trained_at": _dt.datetime.utcnow().isoformat() + "Z",

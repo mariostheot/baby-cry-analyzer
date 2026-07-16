@@ -35,6 +35,9 @@ data class StatsSummary(
     val tier2Ready: Boolean,
     val predictedDistribution: IntArray, // how often each reason was predicted (all events)
     val totalCries: Int,                 // events where a cry was detected
+    val validationCount: Int,
+    val validationBaseAccuracy: Float?,
+    val validationPersonalizedAccuracy: Float?,
 )
 
 /**
@@ -94,7 +97,7 @@ class CryRepository private constructor(
      * deleted/restored/relabelled examples cannot leave old fine-tuned weights behind.
      */
     private suspend fun rebuildPersonalization() = withContext(Dispatchers.Default) {
-        val all = feedbackDao.all(activeProfileId())
+        val all = feedbackDao.all(activeProfileId()).filterNot { it.isValidationHoldout }
         analyzer.personalization.reset()
         analyzer.personalization.updatePrototypes(all)
         analyzer.personalization.maybeTrain(all)
@@ -169,6 +172,7 @@ class CryRepository private constructor(
         // Always drop any earlier learning example from this same cry first, so correcting the
         // reason days later never leaves a stale/contradictory label behind - even if the
         // recording is no longer stored and we can't re-add a corrected one.
+        val wasValidationHoldout = feedbackDao.validationForEvent(eventId) ?: false
         feedbackDao.deleteByEvent(eventId)
 
         val emb = embedding ?: clipStore.readEmbedding(eventId)
@@ -180,6 +184,13 @@ class CryRepository private constructor(
                     labelIndex = idx,
                     embedding = emb,
                     sourceEventId = eventId,
+                    // The first few confirmed examples in every class form a fixed test set.
+                    // Keep this assignment when the parent later corrects the same recording.
+                    isValidationHoldout = wasValidationHoldout ||
+                        feedbackDao.validationCount(
+                            event.profileId.ifBlank { activeProfileId() },
+                            idx,
+                        ) < PERSONAL_VALIDATION_PER_CLASS,
                 )
             )
         }
@@ -422,7 +433,9 @@ class CryRepository private constructor(
     private fun FeedingEvent.completedAt(): Long = timestamp + durationMs.coerceAtLeast(0L)
 
     suspend fun resetPersonalization() = withContext(Dispatchers.Default) {
-        feedbackDao.clear(activeProfileId())
+        // Keep the independent personal holdout so the stats screen can still compare a reset
+        // model with a personalized one. Full history/data reset still removes everything.
+        feedbackDao.clearTraining(activeProfileId())
         analyzer.personalization.reset()
         analyzer.personalization.updatePrototypes(emptyList())
     }
@@ -459,6 +472,16 @@ class CryRepository private constructor(
             val idx = e.confirmedIndex?.takeIf { it in 0 until n } ?: e.predictedIndex
             if (idx in 0 until n) distribution[idx]++
         }
+        val validation = feedbackDao.all(profileId).filter { it.isValidationHoldout }
+        var validationBaseCorrect = 0
+        var validationPersonalizedCorrect = 0
+        var validationScored = 0
+        for (example in validation) {
+            val (base, personalized) = analyzer.comparePersonalization(example.embedding) ?: continue
+            validationScored++
+            if (base == example.labelIndex) validationBaseCorrect++
+            if (personalized == example.labelIndex) validationPersonalizedCorrect++
+        }
 
         StatsSummary(
             labels = labels,
@@ -474,6 +497,11 @@ class CryRepository private constructor(
             tier2Ready = analyzer.personalization.tier2Ready,
             predictedDistribution = distribution,
             totalCries = cries,
+            validationCount = validation.size,
+            validationBaseAccuracy = validationScored.takeIf { it > 0 }
+                ?.let { validationBaseCorrect.toFloat() / it },
+            validationPersonalizedAccuracy = validationScored.takeIf { it > 0 }
+                ?.let { validationPersonalizedCorrect.toFloat() / it },
         )
     }
 
@@ -1011,7 +1039,7 @@ class CryRepository private constructor(
 
     suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
         val root = JSONObject()
-        root.put("version", 4)
+        root.put("version", 5)
         root.put("exportedAt", System.currentTimeMillis())
 
         val profile = getProfile()
@@ -1080,6 +1108,7 @@ class CryRepository private constructor(
                 put("labelIndex", f.labelIndex)
                 put("embedding", encodeFloats(f.embedding))
                 put("sourceEventId", f.sourceEventId)
+                put("isValidationHoldout", f.isValidationHoldout)
             })
         }
         root.put("feedback", fbArr)
@@ -1227,6 +1256,7 @@ class CryRepository private constructor(
                         labelIndex = o.getInt("labelIndex"),
                         embedding = decodeFloats(o.getString("embedding")),
                         sourceEventId = restoredSourceEventId,
+                        isValidationHoldout = o.optBoolean("isValidationHoldout", false),
                     )
                 )
             }
@@ -1331,6 +1361,7 @@ class CryRepository private constructor(
         private const val TUMMY_REMINDER_ON = "tummy_reminder_on"
         private const val TUMMY_REMINDER_HOUR_AM = "tummy_reminder_hour_am"
         private const val TUMMY_REMINDER_HOUR_PM = "tummy_reminder_hour_pm"
+        private const val PERSONAL_VALIDATION_PER_CLASS = 3
 
         @Volatile
         private var instance: CryRepository? = null

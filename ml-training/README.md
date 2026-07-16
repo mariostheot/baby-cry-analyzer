@@ -14,8 +14,9 @@ The same YAMNet runs on the phone, so on-device features match training exactly.
 1. Push this whole project to a (private) GitHub repo.
 2. Open `train_baby_cry.ipynb` in Colab (File -> Open notebook -> GitHub).
 3. Set `REPO_URL` in cell 1, then Run all.
-4. Download `artifacts/model_bundle.zip` at the end and unzip its files into
-   `app/src/main/assets/` of the Android app.
+4. Download `artifacts/model_bundle.zip` at the end. For a GitHub cloud build, upload it
+   unchanged to the repository Release tagged `model`; for a local Android build, copy its
+   model files plus `metadata.json` into `app/src/main/assets/`.
 
 No local Python needed. A GPU runtime is optional (CPU works).
 
@@ -58,13 +59,26 @@ credentials (all optional - the pipeline runs on donateacry alone):
   `calibration.png` - evaluation.
 - `model_bundle/parity_sample.wav` + `parity_expected.json` - for the Android parity test.
 
+`metadata.json` records the model version, training time, seed, configuration hash, gate
+threshold and calibrated confidence policy. The Android app reads it from the same location
+as the `.tflite` files, so a bundled/external model keeps its training-time thresholds.
+
+## Reproducibility and robustness
+
+- The configured `seed` drives Python, NumPy, TensorFlow, grouped folds and augmentation.
+- Waveform augmentation is used only on training examples: pitch/time shifts, gain, SNR-based
+  noise and a light synthetic room reverb. Change its ranges in `configs/default.yaml`.
+- Export runs a Python-versus-TFLite embedding parity check and rejects a bundle below cosine
+  similarity 0.99. The accompanying golden WAV/JSON are used by the Android emulator parity
+  test in CI whenever they are present in the model bundle.
+
 ## How the model gets into the app
 
 Two options (see the app README):
-1. Copy `cry_reason.tflite`, `yamnet.tflite`, `labels.txt` into `app/src/main/assets/`
-   and rebuild.
-2. Or copy the `.tflite` files onto the phone (the app can load them from its external
-   files dir), so you do not need to rebuild after retraining.
+1. Copy `cry_reason.tflite`, `yamnet.tflite`, `cry_reason_trainable.tflite`, `labels.txt`
+   and `metadata.json` into `app/src/main/assets/` and rebuild.
+2. Or copy those files onto the phone (the app can load them from its external files dir), so
+   you do not need to rebuild after retraining.
 
 ## Honest limitations
 

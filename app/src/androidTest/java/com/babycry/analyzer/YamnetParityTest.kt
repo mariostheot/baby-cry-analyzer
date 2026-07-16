@@ -7,7 +7,6 @@ import com.babycry.analyzer.ml.YamnetEmbedder
 import org.json.JSONObject
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
-import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
@@ -20,14 +19,12 @@ import kotlin.math.sqrt
  * the Python training pipeline for the SAME clip. This catches feature mismatches that
  * would silently ruin accuracy.
  *
- * To enable: run `python -m src.main` (or the Colab notebook), then copy
- * `artifacts/model_bundle/parity_sample.wav` and `parity_expected.json` into
- * `app/src/androidTest/assets/`, ensure `yamnet.tflite` is bundled, and remove @Ignore.
+ * Training exports `parity_sample.wav` and `parity_expected.json` with the model bundle.
+ * CI copies them into test assets and runs this on an emulator when they are present.
  */
 @RunWith(AndroidJUnit4::class)
 class YamnetParityTest {
 
-    @Ignore("Enable after copying parity_sample.wav + parity_expected.json into androidTest assets")
     @Test
     fun onDeviceEmbeddingMatchesPython() {
         val target = InstrumentationRegistry.getInstrumentation().targetContext
@@ -35,6 +32,8 @@ class YamnetParityTest {
 
         val modelBuf = ModelStore.mappedModel(target, ModelStore.YAMNET)
         assumeTrue("yamnet.tflite not bundled", modelBuf != null)
+        val samplePresent = runCatching { test.assets.open("parity_sample.wav").close() }.isSuccess
+        assumeTrue("parity assets were not included in the model bundle", samplePresent)
 
         val wave = readWavPcm16(test.assets.open("parity_sample.wav").readBytesCompat())
         val expected = JSONObject(

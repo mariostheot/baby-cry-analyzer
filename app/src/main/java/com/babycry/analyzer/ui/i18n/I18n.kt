@@ -182,11 +182,13 @@ private val EN: Map<String, String> = mapOf(
     "Σωστές προβλέψεις" to "Correct predictions",
     "Όσα έμαθε από εσένα" to "Examples it learned from you",
     "Προσαρμογή στο μωρό σου" to "Adaptation to your baby",
+    "Σταθερό προσωπικό τεστ" to "Fixed personal test",
+    "Χωρίς / με προσαρμογή" to "Without / with adaptation",
     "δεν υποστηρίζεται εδώ" to "not supported here",
     "ενεργή" to "active",
     "μαθαίνει ακόμη" to "still learning",
-    "• «Φορές που έδωσες απάντηση»: πόσες φορές πάτησες ✓ ή διόρθωσες μια πρόβλεψη.\n• «Σωστές προβλέψεις»: από αυτές, πόσες τις είχε βρει σωστά η εφαρμογή.\n• «Προσαρμογή στο μωρό σου»: όταν μαζευτούν αρκετές διορθώσεις, το μοντέλο προσαρμόζεται ειδικά στο δικό σου μωρό." to
-        "• \"Times you responded\": how often you tapped ✓ or corrected a prediction.\n• \"Correct predictions\": of those, how many the app got right.\n• \"Adaptation to your baby\": once enough corrections are collected, the model adapts specifically to your baby.",
+    "• «Φορές που έδωσες απάντηση»: πόσες φορές πάτησες ✓ ή διόρθωσες μια πρόβλεψη.\n• «Σωστές προβλέψεις»: από αυτές, πόσες τις είχε βρει σωστά η εφαρμογή.\n• «Προσαρμογή στο μωρό σου»: όταν μαζευτούν αρκετές διορθώσεις, το μοντέλο προσαρμόζεται ειδικά στο δικό σου μωρό.\n• «Σταθερό προσωπικό τεστ»: οι πρώτες 3 επιβεβαιώσεις ανά αιτία δεν χρησιμοποιούνται για εκπαίδευση, ώστε η σύγκριση να είναι δίκαιη." to
+        "• \"Times you responded\": how often you tapped ✓ or corrected a prediction.\n• \"Correct predictions\": of those, how many the app got right.\n• \"Adaptation to your baby\": once enough corrections are collected, the model adapts specifically to your baby.\n• \"Fixed personal test\": the first 3 confirmations per cause stay out of training, so this comparison is fair.",
     "Πόσο συχνά εμφανίζεται κάθε αιτία" to "How often each cause appears",
     "Η κατανομή όλων των κλαμάτων που κατέγραψες." to "Distribution of all cries you've recorded.",
     "Δεν υπάρχουν ακόμη καταγραφές." to "No records yet.",
@@ -281,6 +283,7 @@ private val EN: Map<String, String> = mapOf(
 
     // ---- About screen ----
     "Έκδοση" to "Version",
+    "Μοντέλο" to "Model",
     "Δημιουργήθηκε από τον Μάριο Θεοτή" to "Created by Mario Theotis",
     "Τι κάνει" to "What it does",
     "Ηχογραφεί το κλάμα του μωρού και εκτιμά την πιθανή αιτία (πείνα, κούραση, κοιλόπονος, ρέψιμο, δυσφορία) με ένα μοντέλο AI που τρέχει τοπικά στο κινητό. Μαθαίνει από τις διορθώσεις σου." to
@@ -364,6 +367,7 @@ private val EN: Map<String, String> = mapOf(
     "Διάρκεια ταΐσματος" to "Feeding duration",
     "Επεξεργασία ταΐσματος" to "Edit feeding",
     "Ώρα έναρξης" to "Start time",
+    "Ώρα λήξης" to "End time",
     "Ώρα" to "Hour",
     "Πάτησε μια καταγραφή για να διορθώσεις την αιτία ή τη διάρκεια ταΐσματος." to
         "Tap a record to correct the cause or feeding duration.",

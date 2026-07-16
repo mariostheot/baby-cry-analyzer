@@ -228,32 +228,45 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
 
     editFeeding?.let { feeding ->
         val isRunning = feeding.durationMs < 0L
-        val initialSeconds = feeding.durationMs.coerceAtLeast(0L) / 1_000L
-        val initialTime = Calendar.getInstance().apply { timeInMillis = feeding.timestamp }
-        var hourText by remember(feeding.id, feeding.timestamp) {
-            mutableStateOf(initialTime.get(Calendar.HOUR_OF_DAY).toString())
+        val startCal = Calendar.getInstance().apply { timeInMillis = feeding.timestamp }
+        val endCal = Calendar.getInstance().apply {
+            timeInMillis = feeding.timestamp + feeding.durationMs.coerceAtLeast(0L)
+        }
+        var startHourText by remember(feeding.id, feeding.timestamp) {
+            mutableStateOf(startCal.get(Calendar.HOUR_OF_DAY).toString())
         }
         var startMinuteText by remember(feeding.id, feeding.timestamp) {
-            mutableStateOf(initialTime.get(Calendar.MINUTE).toString())
+            mutableStateOf(startCal.get(Calendar.MINUTE).toString())
         }
-        var minutesText by remember(feeding.id, feeding.durationMs) {
-            mutableStateOf((initialSeconds / 60L).toString())
+        var endHourText by remember(feeding.id, feeding.timestamp, feeding.durationMs) {
+            mutableStateOf(endCal.get(Calendar.HOUR_OF_DAY).toString())
         }
-        var secondsText by remember(feeding.id, feeding.durationMs) {
-            mutableStateOf((initialSeconds % 60L).toString())
+        var endMinuteText by remember(feeding.id, feeding.timestamp, feeding.durationMs) {
+            mutableStateOf(endCal.get(Calendar.MINUTE).toString())
         }
-        val hour = hourText.toIntOrNull()?.takeIf { it in 0..23 }
+        val startHour = startHourText.toIntOrNull()?.takeIf { it in 0..23 }
         val startMinute = startMinuteText.toIntOrNull()?.takeIf { it in 0..59 }
-        val minutes = minutesText.toLongOrNull()?.coerceIn(0L, 1_440L) ?: 0L
-        val seconds = secondsText.toLongOrNull()?.coerceIn(0L, 59L) ?: 0L
-        val durationMs = (minutes * 60L + seconds) * 1_000L
+        val endHour = endHourText.toIntOrNull()?.takeIf { it in 0..23 }
+        val endMinute = endMinuteText.toIntOrNull()?.takeIf { it in 0..59 }
+
         val updatedStartedAt = Calendar.getInstance().apply {
             timeInMillis = feeding.timestamp
-            set(Calendar.HOUR_OF_DAY, hour ?: get(Calendar.HOUR_OF_DAY))
+            set(Calendar.HOUR_OF_DAY, startHour ?: get(Calendar.HOUR_OF_DAY))
             set(Calendar.MINUTE, startMinute ?: get(Calendar.MINUTE))
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }.timeInMillis
+        val endMillis = Calendar.getInstance().apply {
+            timeInMillis = feeding.timestamp
+            set(Calendar.HOUR_OF_DAY, endHour ?: get(Calendar.HOUR_OF_DAY))
+            set(Calendar.MINUTE, endMinute ?: get(Calendar.MINUTE))
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        // Support a feed that crosses midnight (end earlier in the day than start = next day).
+        val durationMs = (endMillis - updatedStartedAt).let { if (it < 0L) it + 86_400_000L else it }
+        val valid = startHour != null && startMinute != null &&
+            endHour != null && endMinute != null && durationMs > 0L
 
         AlertDialog(
             onDismissRequest = { editFeeding = null },
@@ -269,8 +282,8 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                         Text(tr("Ώρα έναρξης"), style = MaterialTheme.typography.labelLarge)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(
-                                value = hourText,
-                                onValueChange = { hourText = it.filter { char -> char.isDigit() }.take(2) },
+                                value = startHourText,
+                                onValueChange = { startHourText = it.filter { char -> char.isDigit() }.take(2) },
                                 label = { Text(tr("Ώρα")) },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.weight(1f),
@@ -286,20 +299,20 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                             )
                         }
                         Spacer(Modifier.height(12.dp))
-                        Text(tr("Διάρκεια ταΐσματος"), style = MaterialTheme.typography.labelLarge)
+                        Text(tr("Ώρα λήξης"), style = MaterialTheme.typography.labelLarge)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(
-                                value = minutesText,
-                                onValueChange = { minutesText = it.filter { char -> char.isDigit() }.take(4) },
-                                label = { Text(tr("Λεπτά")) },
+                                value = endHourText,
+                                onValueChange = { endHourText = it.filter { char -> char.isDigit() }.take(2) },
+                                label = { Text(tr("Ώρα")) },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.weight(1f),
                                 singleLine = true,
                             )
                             OutlinedTextField(
-                                value = secondsText,
-                                onValueChange = { secondsText = it.filter { char -> char.isDigit() }.take(2) },
-                                label = { Text(tr("Δευτερόλεπτα")) },
+                                value = endMinuteText,
+                                onValueChange = { endMinuteText = it.filter { char -> char.isDigit() }.take(2) },
+                                label = { Text(tr("Λεπτά")) },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.weight(1f),
                                 singleLine = true,
@@ -315,7 +328,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                             viewModel.updateFeeding(feeding.id, updatedStartedAt, durationMs)
                             editFeeding = null
                         },
-                        enabled = hour != null && startMinute != null && durationMs > 0L,
+                        enabled = valid,
                     ) { Text(tr("Αποθήκευση")) }
                 }
             },
@@ -565,12 +578,11 @@ private fun FeedRow(feeding: FeedingEvent, onEdit: () -> Unit) {
 
 @Composable
 private fun feedingDurationText(durationMs: Long): String {
-    val totalSeconds = (durationMs / 1_000L).coerceAtLeast(0L)
-    val minutes = totalSeconds / 60L
-    val seconds = totalSeconds % 60L
+    // We only track whole minutes now; round to the nearest minute for display.
+    val minutes = ((durationMs.coerceAtLeast(0L) + 30_000L) / 60_000L)
     return when (currentAppLang) {
-        AppLang.EN -> if (seconds == 0L) "$minutes min" else "$minutes min $seconds sec"
-        AppLang.EL -> if (seconds == 0L) "$minutes λεπτά" else "$minutes λεπτά $seconds δευτ."
+        AppLang.EN -> "$minutes min"
+        AppLang.EL -> "$minutes λεπτά"
     }
 }
 
