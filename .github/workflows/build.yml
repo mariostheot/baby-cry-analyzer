@@ -141,6 +141,8 @@ jobs:
           APK="app/build/outputs/apk/debug/app-debug.apk"
           APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
           APK_SHA256="$("$APKSIGNER" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}')"
+          echo "Expected stable signing certificate SHA-256: $SIGNING_SHA256"
+          echo "Built APK signing certificate SHA-256: $APK_SHA256"
           if [ -z "$APK_SHA256" ] || [ "$APK_SHA256" != "$SIGNING_SHA256" ]; then
             echo "::error::APK certificate fingerprint does not match the stable signing keystore."
             exit 1

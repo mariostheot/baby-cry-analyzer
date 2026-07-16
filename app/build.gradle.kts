@@ -43,6 +43,10 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            // Do not let AGP silently fall back to a generated debug certificate in CI.
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
