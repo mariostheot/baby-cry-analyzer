@@ -66,6 +66,7 @@ import com.babycry.analyzer.ui.SafetyScreen
 import com.babycry.analyzer.ui.SettingsScreen
 import com.babycry.analyzer.ui.SootheScreen
 import com.babycry.analyzer.ui.StatsScreen
+import com.babycry.analyzer.ui.GrowthScreen
 import com.babycry.analyzer.ui.TummyTimeScreen
 import com.babycry.analyzer.ui.theme.BabyCryTheme
 import com.babycry.analyzer.notify.ConfirmReminder
@@ -132,6 +133,7 @@ private enum class Overlay(val title: String) {
     SOOTHE("Ηρέμησε το μωρό"),
     SAFETY("Πότε να ανησυχήσεις"),
     TUMMY("Tummy Time"),
+    GROWTH("WHO καμπύλες ανάπτυξης"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -167,6 +169,7 @@ private fun AppRootContent(
     val pagerState = rememberPagerState(pageCount = { Tab.entries.size })
     var overlay by remember { mutableStateOf<Overlay?>(null) }
     var reportReturnTo by remember { mutableStateOf<Overlay?>(null) }
+    var growthReturnTo by remember { mutableStateOf<Overlay?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -284,16 +287,25 @@ private fun AppRootContent(
     }
 
     fun closeOverlay() {
-        val returnTo = if (overlay == Overlay.REPORT) reportReturnTo else null
+        val returnTo = when (overlay) {
+            Overlay.REPORT -> reportReturnTo
+            Overlay.GROWTH -> growthReturnTo
+            else -> null
+        }
         overlay = returnTo
-        if (returnTo == null) reportReturnTo = null
+        if (overlay != Overlay.REPORT) reportReturnTo = null
+        if (overlay != Overlay.GROWTH) growthReturnTo = null
     }
 
     BackHandler(enabled = overlay != null) { closeOverlay() }
 
     if (!onboardingDone) {
         OnboardingScreen(
-            onFinish = { name, birth, colic, gender -> viewModel.completeOnboarding(name, birth, colic, gender) },
+            onFinish = { name, birth, colic, gender, weightKg, heightCm ->
+                val grams = weightKg?.let { kotlin.math.round(it * 1000).toInt() }
+                val heightMm = heightCm?.let { kotlin.math.round(it * 10).toInt() }
+                viewModel.completeOnboarding(name, birth, colic, gender, grams, heightMm)
+            },
             onSkip = { viewModel.skipOnboarding() },
         )
         return
@@ -376,6 +388,10 @@ private fun AppRootContent(
                             reportReturnTo = Overlay.SETTINGS
                             overlay = Overlay.REPORT
                         },
+                        onOpenGrowth = {
+                            growthReturnTo = Overlay.SETTINGS
+                            overlay = Overlay.GROWTH
+                        },
                         onBackup = { backupLauncher.launch("baby-cry-backup.json") },
                         onRestore = { restoreLauncher.launch(arrayOf("application/json")) },
                         onExportDataset = { datasetLauncher.launch("baby-cry-dataset.zip") },
@@ -385,6 +401,7 @@ private fun AppRootContent(
                     Overlay.SOOTHE -> SootheScreen(viewModel)
                     Overlay.SAFETY -> SafetyScreen()
                     Overlay.TUMMY -> TummyTimeScreen()
+                    Overlay.GROWTH -> GrowthScreen(viewModel)
                 }
             } else {
                 // The four main tabs: swipe left/right or tap the bottom bar to switch.

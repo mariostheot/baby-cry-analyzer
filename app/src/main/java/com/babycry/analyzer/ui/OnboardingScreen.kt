@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.babycry.analyzer.model.BabyGender
@@ -42,12 +44,21 @@ import java.util.Locale
 
 @Composable
 fun OnboardingScreen(
-    onFinish: (name: String, birthMillis: Long?, colicConfirmed: Boolean, gender: BabyGender) -> Unit,
+    onFinish: (
+        name: String,
+        birthMillis: Long?,
+        colicConfirmed: Boolean,
+        gender: BabyGender,
+        weightKg: Double?,
+        heightCm: Double?,
+    ) -> Unit,
     onSkip: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var name by remember { mutableStateOf("") }
     var birth by remember { mutableStateOf<Long?>(null) }
+    var weightKg by remember { mutableStateOf("") }
+    var heightCm by remember { mutableStateOf("") }
     var gender by remember { mutableStateOf(BabyGender.UNKNOWN) }
     var colic by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
@@ -127,6 +138,52 @@ fun OnboardingScreen(
         }
 
         Spacer(Modifier.height(16.dp))
+        OutlinedTextField(
+            value = weightKg,
+            onValueChange = { weightKg = it },
+            label = { Text(tr("Βάρος (kg)")) },
+            supportingText = { Text(tr("Προαιρετικό — βάρος γέννησης σε κιλά (π.χ. 3,4).")) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium,
+            ),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                focusedLabelColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                cursorColor = MaterialTheme.colorScheme.primary,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(Modifier.height(16.dp))
+        OutlinedTextField(
+            value = heightCm,
+            onValueChange = { heightCm = it },
+            label = { Text(tr("Ύψος (cm)")) },
+            supportingText = { Text(tr("Προαιρετικό — μήκος γέννησης σε εκατοστά (π.χ. 50,5).")) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium,
+            ),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                focusedLabelColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                cursorColor = MaterialTheme.colorScheme.primary,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(Modifier.height(16.dp))
         Column(Modifier.fillMaxWidth()) {
             Text(
                 tr("Φύλο"),
@@ -160,7 +217,21 @@ fun OnboardingScreen(
 
         Spacer(Modifier.height(32.dp))
         Button(
-            onClick = { onFinish(name, birth, colic, gender) },
+            onClick = {
+                val parsedKg = weightKg.trim()
+                    .replace(',', '.')
+                    .toDoubleOrNull()
+                    ?.takeIf { value ->
+                        kotlin.math.round(value * 1000).toInt() in 1..14_999
+                    }
+                val parsedHeightCm = heightCm.trim()
+                    .replace(',', '.')
+                    .toDoubleOrNull()
+                    ?.takeIf { value ->
+                        kotlin.math.round(value * 10).toInt() in 1..1499
+                    }
+                onFinish(name, birth, colic, gender, parsedKg, parsedHeightCm)
+            },
             modifier = Modifier.fillMaxWidth(),
         ) { Text(tr("Ξεκίνα")) }
 

@@ -81,6 +81,31 @@ private val EN: Map<String, String> = mapOf(
     "Κακά (σύνολο)" to "Poops (total)",
     "Κακά ανά ημέρα (μ.ο.)" to "Poops per day (avg)",
     "Πάνες ανά ημέρα (τελευταίες 14)" to "Diapers per day (last 14)",
+    // Weight tracking
+    "Βάρος" to "Weight",
+    "Προσθήκη βάρους" to "Add weight",
+    "Καταγράφηκε το βάρος." to "Weight logged.",
+    "Προαιρετικό — βάρος γέννησης σε κιλά (π.χ. 3,4)." to "Optional — birth weight in kg (e.g. 3.4).",
+    "Δεν έχει καταγραφεί βάρος ακόμη. Πρόσθεσε το βάρος από τις επισκέψεις στον παιδίατρο." to
+        "No weight recorded yet. Add weight from pediatrician visits.",
+    "Τρέχον" to "Current",
+    "Τρέχον βάρος" to "Current weight",
+    "Συνολική μεταβολή" to "Total change",
+    "Βάρος (kg)" to "Weight (kg)",
+    "Επεξεργασία βάρους" to "Edit weight",
+    "Ημερομηνία" to "Date",
+    "Ημερομηνία μέτρησης" to "Measurement date",
+    "Διάλεξε σημερινή ή παλαιότερη ημερομηνία." to "Choose today or an earlier date.",
+    // Height tracking
+    "Ύψος" to "Height",
+    "Ύψος (cm)" to "Height (cm)",
+    "Προσθήκη ύψους" to "Add height",
+    "Καταγράφηκε το ύψος." to "Height logged.",
+    "Προαιρετικό — μήκος γέννησης σε εκατοστά (π.χ. 50,5)." to "Optional — birth length in cm (e.g. 50.5).",
+    "Δεν έχει καταγραφεί ύψος ακόμη. Πρόσθεσε το ύψος από τις επισκέψεις στον παιδίατρο." to
+        "No height recorded yet. Add height from pediatrician visits.",
+    "Τρέχον ύψος" to "Current height",
+    "Επεξεργασία ύψους" to "Edit height",
     // Settings: pediatrician-confirmed colic/gas (per-baby prior)
     "Επιβεβαιωμένοι κολικοί/αέρια από γιατρό" to "Doctor-confirmed colic/gas",
     "Αν ο παιδίατρος έχει επιβεβαιώσει κολικούς ή αέρια στο μωρό, δίνουμε μεγαλύτερο βάρος στο κοιλόπονο/ρέψιμο — ιδίως ανάμεσα στα γεύματα. Ισχύει για το ενεργό μωρό." to
@@ -148,8 +173,8 @@ private val EN: Map<String, String> = mapOf(
     "Πάτησε μια καταγραφή για να ορίσεις/διορθώσεις την αιτία." to
         "Tap a record to set or correct the cause.",
     "Καθαρισμός ιστορικού;" to "Clear history?",
-    "Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα (μαζί με τις αποθηκευμένες ηχογραφήσεις), τα ταΐσματα, οι ύπνοι, οι αλλαγές πάνας, το tummy time και τα γραφήματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται." to
-        "All recorded cries (including saved recordings), feedings, sleep sessions, diaper changes, tummy time, and charts will be deleted. What the model learned from you will NOT be affected.",
+    "Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα (μαζί με τις αποθηκευμένες ηχογραφήσεις), τα ταΐσματα, οι ύπνοι, οι αλλαγές πάνας, το tummy time, οι μετρήσεις βάρους/ύψους και τα γραφήματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται." to
+        "All recorded cries (including saved recordings), feedings, sleep sessions, diaper changes, tummy time, weight/height measurements, and charts will be deleted. What the model learned from you will NOT be affected.",
     "Διαγραφή" to "Delete",
     "Διαγραφή κλάματος;" to "Delete this cry?",
     "Θα διαγραφεί οριστικά αυτή η καταγραφή κλάματος (και η ηχογράφησή της). Δεν μπορεί να αναιρεθεί." to
@@ -175,8 +200,12 @@ private val EN: Map<String, String> = mapOf(
     "Κλάματα ανά ημέρα (τελευταίες 7)" to "Cries per day (last 7)",
     "Χθες" to "Yesterday",
     "Δεν υπάρχουν καταγραφές αυτή την ημέρα." to "No records for this day.",
+    "Δεν υπάρχουν καταγραφές για αυτό το φίλτρο αυτή την ημέρα." to "No records for this filter on this day.",
     "Προηγούμενη ημέρα" to "Previous day",
     "Επόμενη ημέρα" to "Next day",
+    "Όλα" to "All",
+    "Άνοιγμα ημερολογίου" to "Open calendar",
+    "Δεν υπάρχουν ηχογραφήσεις αυτή την ημέρα." to "No recordings for this day.",
 
     // ---- Stats screen ----
     "Πώς τα πάει" to "How it's doing",
@@ -559,4 +588,37 @@ private val EN: Map<String, String> = mapOf(
         "WHO: at least 30′/day (minimum). AAP & Pathways: gradually toward ~60′/day by 3–6 months. NHS: more conservative, ~20–30′/day by 3–4 months. All agree on the basics: start early, \"little & often\", every day, until crawling.",
     "Πηγές: AAP/HealthyChildren, Pathways.org, NHS, WHO. Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή." to
         "Sources: AAP/HealthyChildren, Pathways.org, NHS, WHO. Informational aid, not medical advice.",
+
+    // ---- WHO growth reference (Growth screen) ----
+    "WHO καμπύλες ανάπτυξης" to "WHO growth reference curves",
+    "Ανάπτυξη" to "Growth",
+    "Επίσημες καμπύλες αναφοράς βάρους και ύψους 0–5 ετών, με τις δικές σου καταγραφές." to
+        "Official WHO weight and height reference curves for ages 0–5 years, with your logged measurements.",
+    "Για τις καμπύλες WHO χρειάζεται η ημερομηνία γέννησης. Όρισέ την στα «Στοιχεία ενεργού μωρού» στις Ρυθμίσεις και πάτα «Πίσω»." to
+        "A birth date is required for WHO curves. Set it under \"Active baby details\" in Settings, then tap Back.",
+    "Για τις καμπύλες WHO χρειάζεται το φύλο (αγόρι ή κορίτσι). Όρισέ το στα «Στοιχεία ενεργού μωρού» στις Ρυθμίσεις και πάτα «Πίσω»." to
+        "Sex (boy or girl) is required for WHO curves. Set it under \"Active baby details\" in Settings, then tap Back.",
+    "Οι bundled καμπύλες WHO σε αυτή την οθόνη καλύπτουν μόνο την ηλικία 0–5 ετών (0–60 μήνες)." to
+        "The bundled WHO curves on this screen cover ages 0–5 years (0–60 months) only.",
+    "Δεν φορτώθηκαν τα δεδομένα WHO. Δοκίμασε ξανά αργότερα." to
+        "Could not load WHO data. Try again later.",
+    "Οι γραμμές δείχνουν τις επίσημες καμπύλες αναφοράς WHO (−2 SD, διάμεσος, +2 SD). Τα σημεία είναι οι δικές σου καταγραφές βάρους/ύψους." to
+        "Lines show official WHO reference curves (−2 SD, median, +2 SD). Points are your logged weight/height entries.",
+    "Κάποιες καταγραφές δεν εμφανίζονται: μόνο μετρήσεις από τη γέννηση έως 60 μηνών ηλικίας." to
+        "Some entries are hidden: only measurements from birth through 60 months of age are shown.",
+    "Βάρος για την ηλικία" to "Weight for age",
+    "Μήκος/ύψος για την ηλικία" to "Length/height for age",
+    "Δεν υπάρχουν καταγραφές βάρους ακόμα." to "No weight entries yet.",
+    "Δεν υπάρχουν καταγραφές ύψους ακόμα." to "No height entries yet.",
+    "WHO −2 SD" to "WHO −2 SD",
+    "WHO διάμεσος" to "WHO median",
+    "WHO +2 SD" to "WHO +2 SD",
+    "Οι καταγραφές σου" to "Your entries",
+    "Ηλικία (μήνες)" to "Age (months)",
+    "Οι καμπύλες είναι σημείο αναφοράς του WHO και όχι ιατρική διάγνωση. Συζήτησε ανησυχίες με παιδίατρο." to
+        "These curves are WHO reference points, not a medical diagnosis. Discuss any concerns with your pediatrician.",
+    "Πηγή δεδομένων: WHO Child Growth Standards, 2006. Χωρίς έγκριση ή σύνδεση με τον WHO." to
+        "Data source: WHO Child Growth Standards, 2006. No endorsement by WHO.",
+    "kg" to "kg",
+    "cm" to "cm",
 )

@@ -249,3 +249,75 @@ interface SleepDao {
     @Query("DELETE FROM sleep_events")
     suspend fun clearAllProfiles()
 }
+
+@Dao
+interface WeightDao {
+    @Insert
+    suspend fun insert(event: WeightEvent): Long
+
+    @Query("SELECT * FROM weight_events WHERE profileId = :profileId ORDER BY timestamp DESC LIMIT 1")
+    suspend fun latest(profileId: String): WeightEvent?
+
+    @Query("SELECT * FROM weight_events WHERE profileId = :profileId ORDER BY timestamp DESC LIMIT :limit")
+    fun recent(profileId: String, limit: Int = 200): Flow<List<WeightEvent>>
+
+    @Query("SELECT * FROM weight_events WHERE profileId = :profileId ORDER BY timestamp ASC, id ASC")
+    suspend fun allList(profileId: String): List<WeightEvent>
+
+    @Query("SELECT * FROM weight_events ORDER BY timestamp DESC")
+    suspend fun allListAllProfiles(): List<WeightEvent>
+
+    @Query(
+        "UPDATE weight_events SET timestamp = :timestamp, grams = :grams " +
+            "WHERE id = :id AND profileId = :profileId",
+    )
+    suspend fun updateEntry(id: Long, profileId: String, timestamp: Long, grams: Int): Int
+
+    @Query("DELETE FROM weight_events WHERE id = :id AND profileId = :profileId")
+    suspend fun deleteEntry(id: Long, profileId: String): Int
+
+    @Query("UPDATE weight_events SET profileId = :profileId WHERE profileId = ''")
+    suspend fun assignLegacy(profileId: String)
+
+    @Query("DELETE FROM weight_events WHERE profileId = :profileId")
+    suspend fun clear(profileId: String)
+
+    @Query("DELETE FROM weight_events")
+    suspend fun clearAllProfiles()
+}
+
+@Dao
+interface HeightDao {
+    @Insert
+    suspend fun insert(event: HeightEvent): Long
+
+    @Query("SELECT * FROM height_events WHERE profileId = :profileId ORDER BY timestamp DESC LIMIT 1")
+    suspend fun latest(profileId: String): HeightEvent?
+
+    @Query("SELECT * FROM height_events WHERE profileId = :profileId ORDER BY timestamp DESC LIMIT :limit")
+    fun recent(profileId: String, limit: Int = 200): Flow<List<HeightEvent>>
+
+    @Query("SELECT * FROM height_events WHERE profileId = :profileId ORDER BY timestamp ASC, id ASC")
+    suspend fun allList(profileId: String): List<HeightEvent>
+
+    @Query("SELECT * FROM height_events ORDER BY timestamp DESC")
+    suspend fun allListAllProfiles(): List<HeightEvent>
+
+    @Query(
+        "UPDATE height_events SET timestamp = :timestamp, millimeters = :millimeters " +
+            "WHERE id = :id AND profileId = :profileId",
+    )
+    suspend fun updateEntry(id: Long, profileId: String, timestamp: Long, millimeters: Int): Int
+
+    @Query("DELETE FROM height_events WHERE id = :id AND profileId = :profileId")
+    suspend fun deleteEntry(id: Long, profileId: String): Int
+
+    @Query("UPDATE height_events SET profileId = :profileId WHERE profileId = ''")
+    suspend fun assignLegacy(profileId: String)
+
+    @Query("DELETE FROM height_events WHERE profileId = :profileId")
+    suspend fun clear(profileId: String)
+
+    @Query("DELETE FROM height_events")
+    suspend fun clearAllProfiles()
+}

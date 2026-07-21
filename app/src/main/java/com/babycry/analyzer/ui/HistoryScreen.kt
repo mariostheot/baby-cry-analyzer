@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -91,6 +94,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     var editFeeding by remember { mutableStateOf<FeedingEvent?>(null) }
     var editSleep by remember { mutableStateOf<SleepEvent?>(null) }
     var pendingDelete by remember { mutableStateOf<CryEvent?>(null) }
+    var timelineFilter by remember { mutableStateOf(HistoryFilter.ALL) }
 
     val now = System.currentTimeMillis()
     val todayStart = remember(now) { startOfDay(now) }
@@ -116,6 +120,9 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     }
     val dayLines = remember(cries, feedings, sleeps, diapers, tummy, activeDayStart, language) {
         buildDayTimeline(cries, feedings, sleeps, diapers, tummy, activeDayStart)
+    }
+    val visibleDayLines = remember(dayLines, timelineFilter) {
+        dayLines.filter(timelineFilter::matches)
     }
 
     LazyColumn(
@@ -164,6 +171,12 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
             }
             item { DaySummaryCard(daySummary) }
             item {
+                HistoryFilterBar(
+                    selected = timelineFilter,
+                    onSelected = { timelineFilter = it },
+                )
+            }
+            item {
                 Text(
                     tr("Πάτησε μια καταγραφή για να διορθώσεις την αιτία ή τη διάρκεια ταΐσματος/ύπνου."),
                     style = MaterialTheme.typography.bodySmall,
@@ -171,10 +184,16 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
-            if (dayLines.isEmpty()) {
+            if (visibleDayLines.isEmpty()) {
                 item {
                     Text(
-                        tr("Δεν υπάρχουν καταγραφές αυτή την ημέρα."),
+                        tr(
+                            if (timelineFilter == HistoryFilter.ALL) {
+                                "Δεν υπάρχουν καταγραφές αυτή την ημέρα."
+                            } else {
+                                "Δεν υπάρχουν καταγραφές για αυτό το φίλτρο αυτή την ημέρα."
+                            },
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         modifier = Modifier.padding(vertical = 8.dp),
@@ -182,7 +201,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                 }
             } else {
                 itemsIndexed(
-                    dayLines,
+                    visibleDayLines,
                     key = { _, line ->
                         when (line) {
                             is Line.Cry -> "c_${line.e.id}"
@@ -194,7 +213,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                     },
                 ) { index, line ->
                     val isFirst = index == 0
-                    val isLast = index == dayLines.lastIndex
+                    val isLast = index == visibleDayLines.lastIndex
                     when (line) {
                         is Line.Cry -> CryTimelineRow(
                             event = line.e,
@@ -240,7 +259,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
             onDismissRequest = { confirmClear = false },
             title = { Text(tr("Καθαρισμός ιστορικού;")) },
             text = {
-                Text(tr("Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα (μαζί με τις αποθηκευμένες ηχογραφήσεις), τα ταΐσματα, οι αλλαγές πάνας, το tummy time και τα γραφήματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται."))
+                Text(tr("Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα (μαζί με τις αποθηκευμένες ηχογραφήσεις), τα ταΐσματα, οι ύπνοι, οι αλλαγές πάνας, το tummy time, οι μετρήσεις βάρους/ύψους και τα γραφήματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται."))
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -672,6 +691,43 @@ private fun DayNavigationBar(
             TextButton(onClick = onToday) {
                 Text(tr("Σήμερα"))
             }
+        }
+    }
+}
+
+private enum class HistoryFilter(val label: String, val emoji: String) {
+    ALL("Όλα", "•"),
+    CRIES("Κλάματα", "😢"),
+    FEEDINGS("Ταΐσματα", "🍼"),
+    SLEEP("Ύπνος", "😴"),
+    DIAPERS("Πάνες", "🧷"),
+    TUMMY("Tummy Time", "🤸");
+
+    fun matches(line: Line): Boolean = when (this) {
+        ALL -> true
+        CRIES -> line is Line.Cry
+        FEEDINGS -> line is Line.Feed
+        SLEEP -> line is Line.Sleep
+        DIAPERS -> line is Line.Diaper
+        TUMMY -> line is Line.Tummy
+    }
+}
+
+@Composable
+private fun HistoryFilterBar(
+    selected: HistoryFilter,
+    onSelected: (HistoryFilter) -> Unit,
+) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(top = 4.dp),
+    ) {
+        items(HistoryFilter.entries) { filter ->
+            FilterChip(
+                selected = filter == selected,
+                onClick = { onSelected(filter) },
+                label = { Text("${filter.emoji} ${tr(filter.label)}") },
+            )
         }
     }
 }

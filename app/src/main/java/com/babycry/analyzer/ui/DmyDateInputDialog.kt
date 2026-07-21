@@ -2,10 +2,19 @@ package com.babycry.analyzer.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -16,13 +25,19 @@ import com.babycry.analyzer.ui.i18n.tr
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
-/** Manual birth-date input with a device-independent day-first format. */
+/**
+ * Manual birth-date input with a device-independent day-first format. Digits are auto-slashed
+ * (so the numeric keyboard needs no "/" key) and a calendar button opens a tap-to-pick grid.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DmyDateInputDialog(
     initialDateMillis: Long?,
     onDismiss: () -> Unit,
     onConfirm: (Long) -> Unit,
+    title: String? = null,
 ) {
     val formatter = remember {
         SimpleDateFormat("dd/MM/yyyy", Locale.UK).apply { isLenient = false }
@@ -30,26 +45,31 @@ fun DmyDateInputDialog(
     var text by remember(initialDateMillis) {
         mutableStateOf(initialDateMillis?.let { formatter.format(Date(it)) } ?: "")
     }
-    val selectedMillis = remember(text) {
-        parseDmyDate(text, formatter)
-    }
+    var showCalendar by remember { mutableStateOf(false) }
+    val selectedMillis = remember(text) { parseDmyDate(text, formatter) }
     val valid = selectedMillis != null && selectedMillis <= System.currentTimeMillis()
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(tr("Ημερομηνία γέννησης")) },
+        title = { Text(title ?: tr("Ημερομηνία γέννησης")) },
         text = {
             Column {
                 OutlinedTextField(
                     value = text,
-                    onValueChange = { typed ->
-                        text = typed.filter { it.isDigit() || it == '/' }.take(10)
-                    },
+                    onValueChange = { typed -> text = formatDmyDigits(typed) },
                     label = { Text("DD/MM/YYYY") },
                     placeholder = { Text("DD/MM/YYYY") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     isError = text.isNotBlank() && !valid,
+                    trailingIcon = {
+                        IconButton(onClick = { showCalendar = true }) {
+                            Icon(
+                                Icons.Filled.CalendarMonth,
+                                contentDescription = tr("Άνοιγμα ημερολογίου"),
+                            )
+                        }
+                    },
                 )
                 if (text.isNotBlank() && !valid) {
                     Text(tr("Γράψε την ημερομηνία ως DD/MM/YYYY."))
@@ -66,6 +86,49 @@ fun DmyDateInputDialog(
             TextButton(onClick = onDismiss) { Text(tr("Άκυρο")) }
         },
     )
+
+    if (showCalendar) {
+        val today = System.currentTimeMillis()
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = selectedMillis ?: initialDateMillis,
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean = utcTimeMillis <= today
+            },
+        )
+        // The picker reports UTC midnight; format in UTC so the day never shifts.
+        val utcFormatter = remember {
+            SimpleDateFormat("dd/MM/yyyy", Locale.UK).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }
+        }
+        DatePickerDialog(
+            onDismissRequest = { showCalendar = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickerState.selectedDateMillis?.let { millis ->
+                        text = utcFormatter.format(Date(millis))
+                    }
+                    showCalendar = false
+                }) { Text(tr("Εντάξει")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCalendar = false }) { Text(tr("Άκυρο")) }
+            },
+        ) {
+            DatePicker(state = pickerState)
+        }
+    }
+}
+
+/** Keeps only digits (max 8) and re-inserts the day-first slashes as the parent types. */
+private fun formatDmyDigits(input: String): String {
+    val digits = input.filter { it.isDigit() }.take(8)
+    return buildString {
+        for (i in digits.indices) {
+            if (i == 2 || i == 4) append('/')
+            append(digits[i])
+        }
+    }
 }
 
 private fun parseDmyDate(input: String, formatter: SimpleDateFormat): Long? {

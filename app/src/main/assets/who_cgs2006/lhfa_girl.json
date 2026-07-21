@@ -1,0 +1,376 @@
+{
+  "whoStandard": "WHO Child Growth Standards, 2006",
+  "indicator": "length-height-for-age",
+  "sex": "girl",
+  "unit": "millimeters",
+  "sourceUrl": "https://cdn.who.int/media/docs/default-source/child-growth/child-growth-standards/indicators/length-height-for-age/lhfa_girls_0-to-2-years_zscores.xlsx?sfvrsn=e9e66a95_11",
+  "sourceUrlSupplement": "https://cdn.who.int/media/docs/default-source/child-growth/child-growth-standards/indicators/length-height-for-age/lhfa_girls_2-to-5-years_zscores.xlsx?sfvrsn=2ec187b9_11",
+  "records": [
+    {
+      "month": 0,
+      "sd2neg": 454,
+      "sd0": 491,
+      "sd2": 529
+    },
+    {
+      "month": 1,
+      "sd2neg": 498,
+      "sd0": 537,
+      "sd2": 576
+    },
+    {
+      "month": 2,
+      "sd2neg": 530,
+      "sd0": 571,
+      "sd2": 611
+    },
+    {
+      "month": 3,
+      "sd2neg": 556,
+      "sd0": 598,
+      "sd2": 640
+    },
+    {
+      "month": 4,
+      "sd2neg": 578,
+      "sd0": 621,
+      "sd2": 664
+    },
+    {
+      "month": 5,
+      "sd2neg": 596,
+      "sd0": 640,
+      "sd2": 685
+    },
+    {
+      "month": 6,
+      "sd2neg": 612,
+      "sd0": 657,
+      "sd2": 703
+    },
+    {
+      "month": 7,
+      "sd2neg": 627,
+      "sd0": 673,
+      "sd2": 719
+    },
+    {
+      "month": 8,
+      "sd2neg": 640,
+      "sd0": 687,
+      "sd2": 735
+    },
+    {
+      "month": 9,
+      "sd2neg": 653,
+      "sd0": 701,
+      "sd2": 750
+    },
+    {
+      "month": 10,
+      "sd2neg": 665,
+      "sd0": 715,
+      "sd2": 764
+    },
+    {
+      "month": 11,
+      "sd2neg": 677,
+      "sd0": 728,
+      "sd2": 778
+    },
+    {
+      "month": 12,
+      "sd2neg": 689,
+      "sd0": 740,
+      "sd2": 792
+    },
+    {
+      "month": 13,
+      "sd2neg": 700,
+      "sd0": 752,
+      "sd2": 805
+    },
+    {
+      "month": 14,
+      "sd2neg": 710,
+      "sd0": 764,
+      "sd2": 817
+    },
+    {
+      "month": 15,
+      "sd2neg": 720,
+      "sd0": 775,
+      "sd2": 830
+    },
+    {
+      "month": 16,
+      "sd2neg": 730,
+      "sd0": 786,
+      "sd2": 842
+    },
+    {
+      "month": 17,
+      "sd2neg": 740,
+      "sd0": 797,
+      "sd2": 854
+    },
+    {
+      "month": 18,
+      "sd2neg": 749,
+      "sd0": 807,
+      "sd2": 865
+    },
+    {
+      "month": 19,
+      "sd2neg": 758,
+      "sd0": 817,
+      "sd2": 876
+    },
+    {
+      "month": 20,
+      "sd2neg": 767,
+      "sd0": 827,
+      "sd2": 887
+    },
+    {
+      "month": 21,
+      "sd2neg": 775,
+      "sd0": 837,
+      "sd2": 898
+    },
+    {
+      "month": 22,
+      "sd2neg": 784,
+      "sd0": 846,
+      "sd2": 908
+    },
+    {
+      "month": 23,
+      "sd2neg": 792,
+      "sd0": 855,
+      "sd2": 919
+    },
+    {
+      "month": 24,
+      "sd2neg": 793,
+      "sd0": 857,
+      "sd2": 922
+    },
+    {
+      "month": 25,
+      "sd2neg": 800,
+      "sd0": 866,
+      "sd2": 931
+    },
+    {
+      "month": 26,
+      "sd2neg": 808,
+      "sd0": 874,
+      "sd2": 941
+    },
+    {
+      "month": 27,
+      "sd2neg": 815,
+      "sd0": 883,
+      "sd2": 950
+    },
+    {
+      "month": 28,
+      "sd2neg": 822,
+      "sd0": 891,
+      "sd2": 960
+    },
+    {
+      "month": 29,
+      "sd2neg": 829,
+      "sd0": 899,
+      "sd2": 969
+    },
+    {
+      "month": 30,
+      "sd2neg": 836,
+      "sd0": 907,
+      "sd2": 977
+    },
+    {
+      "month": 31,
+      "sd2neg": 843,
+      "sd0": 914,
+      "sd2": 986
+    },
+    {
+      "month": 32,
+      "sd2neg": 849,
+      "sd0": 922,
+      "sd2": 994
+    },
+    {
+      "month": 33,
+      "sd2neg": 856,
+      "sd0": 929,
+      "sd2": 1003
+    },
+    {
+      "month": 34,
+      "sd2neg": 862,
+      "sd0": 936,
+      "sd2": 1011
+    },
+    {
+      "month": 35,
+      "sd2neg": 868,
+      "sd0": 944,
+      "sd2": 1019
+    },
+    {
+      "month": 36,
+      "sd2neg": 874,
+      "sd0": 951,
+      "sd2": 1027
+    },
+    {
+      "month": 37,
+      "sd2neg": 880,
+      "sd0": 957,
+      "sd2": 1034
+    },
+    {
+      "month": 38,
+      "sd2neg": 886,
+      "sd0": 964,
+      "sd2": 1042
+    },
+    {
+      "month": 39,
+      "sd2neg": 892,
+      "sd0": 971,
+      "sd2": 1050
+    },
+    {
+      "month": 40,
+      "sd2neg": 898,
+      "sd0": 977,
+      "sd2": 1057
+    },
+    {
+      "month": 41,
+      "sd2neg": 904,
+      "sd0": 984,
+      "sd2": 1064
+    },
+    {
+      "month": 42,
+      "sd2neg": 909,
+      "sd0": 990,
+      "sd2": 1072
+    },
+    {
+      "month": 43,
+      "sd2neg": 915,
+      "sd0": 997,
+      "sd2": 1079
+    },
+    {
+      "month": 44,
+      "sd2neg": 920,
+      "sd0": 1003,
+      "sd2": 1086
+    },
+    {
+      "month": 45,
+      "sd2neg": 925,
+      "sd0": 1009,
+      "sd2": 1093
+    },
+    {
+      "month": 46,
+      "sd2neg": 931,
+      "sd0": 1015,
+      "sd2": 1100
+    },
+    {
+      "month": 47,
+      "sd2neg": 936,
+      "sd0": 1021,
+      "sd2": 1107
+    },
+    {
+      "month": 48,
+      "sd2neg": 941,
+      "sd0": 1027,
+      "sd2": 1113
+    },
+    {
+      "month": 49,
+      "sd2neg": 946,
+      "sd0": 1033,
+      "sd2": 1120
+    },
+    {
+      "month": 50,
+      "sd2neg": 951,
+      "sd0": 1039,
+      "sd2": 1127
+    },
+    {
+      "month": 51,
+      "sd2neg": 956,
+      "sd0": 1045,
+      "sd2": 1133
+    },
+    {
+      "month": 52,
+      "sd2neg": 961,
+      "sd0": 1050,
+      "sd2": 1140
+    },
+    {
+      "month": 53,
+      "sd2neg": 966,
+      "sd0": 1056,
+      "sd2": 1146
+    },
+    {
+      "month": 54,
+      "sd2neg": 971,
+      "sd0": 1062,
+      "sd2": 1152
+    },
+    {
+      "month": 55,
+      "sd2neg": 976,
+      "sd0": 1067,
+      "sd2": 1159
+    },
+    {
+      "month": 56,
+      "sd2neg": 981,
+      "sd0": 1073,
+      "sd2": 1165
+    },
+    {
+      "month": 57,
+      "sd2neg": 985,
+      "sd0": 1078,
+      "sd2": 1171
+    },
+    {
+      "month": 58,
+      "sd2neg": 990,
+      "sd0": 1084,
+      "sd2": 1177
+    },
+    {
+      "month": 59,
+      "sd2neg": 995,
+      "sd0": 1089,
+      "sd2": 1183
+    },
+    {
+      "month": 60,
+      "sd2neg": 999,
+      "sd0": 1094,
+      "sd2": 1189
+    }
+  ]
+}

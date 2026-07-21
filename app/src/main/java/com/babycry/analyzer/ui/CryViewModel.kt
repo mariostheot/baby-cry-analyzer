@@ -14,6 +14,8 @@ import com.babycry.analyzer.data.FeedingEvent
 import com.babycry.analyzer.data.SleepEvent
 import com.babycry.analyzer.data.StatsSummary
 import com.babycry.analyzer.data.TummyTimeEvent
+import com.babycry.analyzer.data.WeightEvent
+import com.babycry.analyzer.data.HeightEvent
 import com.babycry.analyzer.insights.CareInsightSummary
 import com.babycry.analyzer.ml.CryAnalysis
 import com.babycry.analyzer.model.AnalysisEngine
@@ -162,6 +164,12 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val recentSleep: StateFlow<List<SleepEvent>> = _profile.flatMapLatest { repo.recentSleep(it.id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val recentWeights: StateFlow<List<WeightEvent>> = _profile.flatMapLatest { repo.recentWeights(it.id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val recentHeights: StateFlow<List<HeightEvent>> = _profile.flatMapLatest { repo.recentHeights(it.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // kotlinx-coroutines only offers typed combine() up to 5 flows, so fold the four care
@@ -544,6 +552,44 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun addWeight(grams: Int, timestamp: Long) {
+        viewModelScope.launch {
+            repo.logWeight(grams, timestamp)
+            _home.update { it.copy(message = trS("Καταγράφηκε το βάρος.")) }
+        }
+    }
+
+    fun updateWeight(id: Long, grams: Int, timestamp: Long) {
+        viewModelScope.launch {
+            repo.updateWeight(id, grams, timestamp)
+        }
+    }
+
+    fun deleteWeight(id: Long) {
+        viewModelScope.launch {
+            repo.deleteWeight(id)
+        }
+    }
+
+    fun addHeight(millimeters: Int, timestamp: Long) {
+        viewModelScope.launch {
+            repo.logHeight(millimeters, timestamp)
+            _home.update { it.copy(message = trS("Καταγράφηκε το ύψος.")) }
+        }
+    }
+
+    fun updateHeight(id: Long, millimeters: Int, timestamp: Long) {
+        viewModelScope.launch {
+            repo.updateHeight(id, millimeters, timestamp)
+        }
+    }
+
+    fun deleteHeight(id: Long) {
+        viewModelScope.launch {
+            repo.deleteHeight(id)
+        }
+    }
+
     /** Age-appropriate tummy-time sessions/day for the active baby. */
     fun tummyGoal(): Int = repo.tummyDailyGoal()
 
@@ -745,15 +791,47 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Saves draft profile data before opening a screen that relies on birth date or gender. */
+    fun saveProfileThen(
+        name: String,
+        birthMillis: Long?,
+        gender: BabyGender,
+        onSaved: () -> Unit,
+    ) {
+        viewModelScope.launch {
+            repo.updateActiveProfile(name.trim(), birthMillis, gender)
+            refreshProfiles()
+            scheduleFeedReminder()
+            scheduleTummyReminder()
+            onSaved()
+        }
+    }
+
     /** First-run: save the baby profile and never show the welcome screen again. */
     fun completeOnboarding(
         name: String,
         birthMillis: Long?,
         colicConfirmed: Boolean = false,
         gender: BabyGender = BabyGender.UNKNOWN,
+        initialWeightGrams: Int? = null,
+        initialHeightMillimeters: Int? = null,
     ) {
         viewModelScope.launch {
-            repo.addProfile(name.trim(), birthMillis, colicConfirmed, gender)
+            val id = repo.addProfile(name.trim(), birthMillis, colicConfirmed, gender)
+            if (initialWeightGrams != null && initialWeightGrams > 0 && birthMillis != null) {
+                repo.logWeight(
+                    initialWeightGrams,
+                    timestamp = birthMillis,
+                    profileId = id,
+                )
+            }
+            if (initialHeightMillimeters != null && initialHeightMillimeters > 0 && birthMillis != null) {
+                repo.logHeight(
+                    initialHeightMillimeters,
+                    timestamp = birthMillis,
+                    profileId = id,
+                )
+            }
             repo.setOnboardingComplete()
             refreshProfiles()
             refreshActiveProfileState()

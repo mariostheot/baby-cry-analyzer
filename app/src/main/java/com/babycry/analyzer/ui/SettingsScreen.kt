@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -63,6 +64,7 @@ private enum class Confirm { RESET_PERSONALIZATION, CLEAR_HISTORY }
 fun SettingsScreen(
     viewModel: CryViewModel,
     onExportReport: () -> Unit,
+    onOpenGrowth: () -> Unit,
     onBackup: () -> Unit,
     onRestore: () -> Unit,
     onExportDataset: () -> Unit,
@@ -302,6 +304,26 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(20.dp))
 
+        // ---- WHO growth reference ----
+        SectionTitle(tr("Ανάπτυξη"))
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                ActionRow(
+                    Icons.Filled.ShowChart,
+                    tr("WHO καμπύλες ανάπτυξης"),
+                    tr("Επίσημες καμπύλες αναφοράς βάρους και ύψους 0–5 ετών, με τις δικές σου καταγραφές."),
+                    onClick = {
+                        // The birth date and sex above are draft state until saved. Persist them
+                        // before opening the WHO screen so it never reads an older profile.
+                        focus.clearFocus()
+                        viewModel.saveProfileThen(name, birth, gender, onOpenGrowth)
+                    },
+                )
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
         // ---- Reminders ----
         SectionTitle(tr("Υπενθυμίσεις"))
         Card(Modifier.fillMaxWidth()) {
@@ -454,7 +476,7 @@ fun SettingsScreen(
                     tr("Το μοντέλο θα ξεχάσει όσα έμαθε από τις διορθώσεις σου και θα επιστρέψει στη βασική του κατάσταση. Το ιστορικό & τα στατιστικά μένουν.")
             Confirm.CLEAR_HISTORY ->
                 tr("Καθαρισμός ιστορικού;") to
-                    tr("Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα (μαζί με τις αποθηκευμένες ηχογραφήσεις), τα ταΐσματα, οι αλλαγές πάνας, το tummy time και τα γραφήματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται.")
+                tr("Θα διαγραφούν όλα τα καταγεγραμμένα κλάματα (μαζί με τις αποθηκευμένες ηχογραφήσεις), τα ταΐσματα, οι ύπνοι, οι αλλαγές πάνας, το tummy time, οι μετρήσεις βάρους/ύψους και τα γραφήματα. Αυτό που έμαθε το μοντέλο από εσένα ΔΕΝ επηρεάζεται.")
         }
         AlertDialog(
             onDismissRequest = { confirm = null },

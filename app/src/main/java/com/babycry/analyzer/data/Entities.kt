@@ -98,3 +98,27 @@ data class SleepEvent(
     @ColumnInfo(defaultValue = "0") val durationMs: Long = 0,
     val note: String? = null,
 )
+
+/**
+ * One weight measurement. [grams] is stored as an integer for precision; the first entry is
+ * typically birth weight captured during onboarding.
+ */
+@Entity(tableName = "weight_events")
+data class WeightEvent(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(defaultValue = "") val profileId: String = "",
+    val timestamp: Long,
+    val grams: Int,
+)
+
+/**
+ * One length/height measurement. [millimeters] is stored as an integer for precision; the first
+ * entry is typically birth length captured during onboarding.
+ */
+@Entity(tableName = "height_events")
+data class HeightEvent(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(defaultValue = "") val profileId: String = "",
+    val timestamp: Long,
+    val millimeters: Int,
+)

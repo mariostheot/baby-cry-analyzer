@@ -62,6 +62,8 @@ class CryRepository private constructor(
     private val diaperDao = db.diaperDao()
     private val tummyDao = db.tummyDao()
     private val sleepDao = db.sleepDao()
+    private val weightDao = db.weightDao()
+    private val heightDao = db.heightDao()
     private val profilePrefs = context.getSharedPreferences("profile", Context.MODE_PRIVATE)
     private val clipStore = ClipStore(context)
 
@@ -79,6 +81,8 @@ class CryRepository private constructor(
     fun recentDiapers(profileId: String = activeProfileId()): Flow<List<DiaperEvent>> = diaperDao.recent(profileId)
     fun recentTummy(profileId: String = activeProfileId()): Flow<List<TummyTimeEvent>> = tummyDao.recent(profileId)
     fun recentSleep(profileId: String = activeProfileId()): Flow<List<SleepEvent>> = sleepDao.recent(profileId)
+    fun recentWeights(profileId: String = activeProfileId()): Flow<List<WeightEvent>> = weightDao.recent(profileId)
+    fun recentHeights(profileId: String = activeProfileId()): Flow<List<HeightEvent>> = heightDao.recent(profileId)
 
     suspend fun assignLegacyDataToActiveProfile() = withContext(Dispatchers.IO) {
         val profileId = activeProfileId()
@@ -89,6 +93,8 @@ class CryRepository private constructor(
         diaperDao.assignLegacy(profileId)
         tummyDao.assignLegacy(profileId)
         sleepDao.assignLegacy(profileId)
+        weightDao.assignLegacy(profileId)
+        heightDao.assignLegacy(profileId)
     }
 
     fun isPersonalizationEnabled(): Boolean = profilePrefs.getBoolean(PERSONALIZATION_ON, true)
@@ -364,6 +370,64 @@ class CryRepository private constructor(
     suspend fun logTummy() = withContext(Dispatchers.IO) {
         tummyDao.insert(TummyTimeEvent(profileId = activeProfileId(), timestamp = System.currentTimeMillis()))
     }
+
+    suspend fun logWeight(
+        grams: Int,
+        timestamp: Long = System.currentTimeMillis(),
+        profileId: String = activeProfileId(),
+    ): Long = withContext(Dispatchers.IO) {
+        require(grams in 1..14_999) { "Weight must be between 1 g and 14.999 kg." }
+        require(timestamp <= System.currentTimeMillis()) { "Weight date cannot be in the future." }
+        weightDao.insert(WeightEvent(profileId = profileId, timestamp = timestamp, grams = grams))
+    }
+
+    suspend fun updateWeight(
+        id: Long,
+        grams: Int,
+        timestamp: Long,
+        profileId: String = activeProfileId(),
+    ): Boolean = withContext(Dispatchers.IO) {
+        require(grams in 1..14_999) { "Weight must be between 1 g and 14.999 kg." }
+        require(timestamp <= System.currentTimeMillis()) { "Weight date cannot be in the future." }
+        weightDao.updateEntry(id, profileId, timestamp, grams) > 0
+    }
+
+    suspend fun deleteWeight(id: Long, profileId: String = activeProfileId()): Boolean =
+        withContext(Dispatchers.IO) {
+            weightDao.deleteEntry(id, profileId) > 0
+        }
+
+    suspend fun latestWeight(profileId: String = activeProfileId()): WeightEvent? =
+        withContext(Dispatchers.IO) { weightDao.latest(profileId) }
+
+    suspend fun logHeight(
+        millimeters: Int,
+        timestamp: Long = System.currentTimeMillis(),
+        profileId: String = activeProfileId(),
+    ): Long = withContext(Dispatchers.IO) {
+        require(millimeters in 1..1_499) { "Height must be between 1 mm and 149.9 cm." }
+        require(timestamp <= System.currentTimeMillis()) { "Height date cannot be in the future." }
+        heightDao.insert(HeightEvent(profileId = profileId, timestamp = timestamp, millimeters = millimeters))
+    }
+
+    suspend fun updateHeight(
+        id: Long,
+        millimeters: Int,
+        timestamp: Long,
+        profileId: String = activeProfileId(),
+    ): Boolean = withContext(Dispatchers.IO) {
+        require(millimeters in 1..1_499) { "Height must be between 1 mm and 149.9 cm." }
+        require(timestamp <= System.currentTimeMillis()) { "Height date cannot be in the future." }
+        heightDao.updateEntry(id, profileId, timestamp, millimeters) > 0
+    }
+
+    suspend fun deleteHeight(id: Long, profileId: String = activeProfileId()): Boolean =
+        withContext(Dispatchers.IO) {
+            heightDao.deleteEntry(id, profileId) > 0
+        }
+
+    suspend fun latestHeight(profileId: String = activeProfileId()): HeightEvent? =
+        withContext(Dispatchers.IO) { heightDao.latest(profileId) }
 
     /** Starts one timed sleep session, or returns the one already running for this baby. */
     suspend fun startSleep(profileId: String = activeProfileId()): SleepEvent = withContext(Dispatchers.IO) {
@@ -710,6 +774,8 @@ class CryRepository private constructor(
         diaperDao.clear(profileId)
         tummyDao.clear(profileId)
         sleepDao.clear(profileId)
+        weightDao.clear(profileId)
+        heightDao.clear(profileId)
     }
 
     private fun newProfileId(): String = java.util.UUID.randomUUID().toString()
@@ -845,6 +911,8 @@ class CryRepository private constructor(
         val events = cryDao.allEvents(profileId)
         val feedings = feedingDao.allList(profileId)
         val diapers = diaperDao.allList(profileId)
+        val weights = weightDao.allList(profileId)
+        val heights = heightDao.allList(profileId)
         val tummy = tummyDao.allList(profileId)
         val stats = stats()
         val profile = getProfile()
@@ -1092,6 +1160,54 @@ class CryRepository private constructor(
             sb.append("</div>")
         }
 
+        if (weights.isNotEmpty()) {
+            val latest = weights.last()
+            val kgLocale = if (lang == AppLang.EN) Locale.ENGLISH else Locale("el")
+            fun kgStr(grams: Int) = String.format(kgLocale, "%.2f kg", grams / 1000.0)
+            sb.append("<h2>${trS("Βάρος")}</h2>")
+            sb.append("<div class=\"row\"><span>${trS("Τρέχον βάρος")}</span><span>${kgStr(latest.grams)}</span></div>")
+            if (weights.size >= 2) {
+                val deltaGrams = latest.grams - weights.first().grams
+                val sign = if (deltaGrams >= 0) "+" else ""
+                sb.append(
+                    "<div class=\"row\"><span>${trS("Συνολική μεταβολή")}</span>" +
+                        "<span>$sign${String.format(kgLocale, "%.2f kg", deltaGrams / 1000.0)}</span></div>",
+                )
+            }
+            sb.append("<table><tr><th>${trS("Ημερομηνία")}</th><th>${trS("Βάρος (kg)")}</th></tr>")
+            for (w in weights) {
+                sb.append(
+                    "<tr><td>${esc(df.format(Date(w.timestamp)))}</td>" +
+                        "<td>${esc(kgStr(w.grams))}</td></tr>",
+                )
+            }
+            sb.append("</table>")
+        }
+
+        if (heights.isNotEmpty()) {
+            val latestH = heights.last()
+            val cmLocale = if (lang == AppLang.EN) Locale.ENGLISH else Locale("el")
+            fun cmStr(mm: Int) = String.format(cmLocale, "%.1f cm", mm / 10.0)
+            sb.append("<h2>${trS("Ύψος")}</h2>")
+            sb.append("<div class=\"row\"><span>${trS("Τρέχον ύψος")}</span><span>${cmStr(latestH.millimeters)}</span></div>")
+            if (heights.size >= 2) {
+                val deltaMm = latestH.millimeters - heights.first().millimeters
+                val sign = if (deltaMm >= 0) "+" else ""
+                sb.append(
+                    "<div class=\"row\"><span>${trS("Συνολική μεταβολή")}</span>" +
+                        "<span>$sign${String.format(cmLocale, "%.1f cm", deltaMm / 10.0)}</span></div>",
+                )
+            }
+            sb.append("<table><tr><th>${trS("Ημερομηνία")}</th><th>${trS("Ύψος (cm)")}</th></tr>")
+            for (h in heights) {
+                sb.append(
+                    "<tr><td>${esc(df.format(Date(h.timestamp)))}</td>" +
+                        "<td>${esc(cmStr(h.millimeters))}</td></tr>",
+                )
+            }
+            sb.append("</table>")
+        }
+
         // Reason breakdown
         val distTotal = stats.predictedDistribution.sum().coerceAtLeast(1)
         sb.append("<h2>${trS("Κατανομή αιτιών")}</h2>")
@@ -1130,7 +1246,7 @@ class CryRepository private constructor(
 
     suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
         val root = JSONObject()
-        root.put("version", 6)
+        root.put("version", 8)
         root.put("exportedAt", System.currentTimeMillis())
 
         val profile = getProfile()
@@ -1245,6 +1361,26 @@ class CryRepository private constructor(
         }
         root.put("sleeps", sleepArr)
 
+        val weightArr = JSONArray()
+        for (we in weightDao.allListAllProfiles()) {
+            weightArr.put(JSONObject().apply {
+                put("profileId", we.profileId)
+                put("timestamp", we.timestamp)
+                put("grams", we.grams)
+            })
+        }
+        root.put("weights", weightArr)
+
+        val heightArr = JSONArray()
+        for (he in heightDao.allListAllProfiles()) {
+            heightArr.put(JSONObject().apply {
+                put("profileId", he.profileId)
+                put("timestamp", he.timestamp)
+                put("millimeters", he.millimeters)
+            })
+        }
+        root.put("heights", heightArr)
+
         val pendingArr = JSONArray()
         for (p in getProfiles()) {
             for (eventId in pendingEventIds(p.id)) {
@@ -1296,6 +1432,8 @@ class CryRepository private constructor(
         diaperDao.clearAllProfiles()
         tummyDao.clearAllProfiles()
         sleepDao.clearAllProfiles()
+        weightDao.clearAllProfiles()
+        heightDao.clearAllProfiles()
         // Old clips are keyed by the previous event ids, which no longer match.
         clipStore.clearAll()
         clearAllPending()
@@ -1411,6 +1549,36 @@ class CryRepository private constructor(
                         note = if (o.has("note")) o.getString("note") else null,
                     )
                 )
+            }
+        }
+        root.optJSONArray("weights")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val grams = o.optInt("grams", 0)
+                if (grams in 1..14_999) {
+                    weightDao.insert(
+                        WeightEvent(
+                            profileId = o.optString("profileId", activeProfileId()),
+                            timestamp = o.getLong("timestamp"),
+                            grams = grams,
+                        ),
+                    )
+                }
+            }
+        }
+        root.optJSONArray("heights")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val millimeters = o.optInt("millimeters", 0)
+                if (millimeters in 1..1_499) {
+                    heightDao.insert(
+                        HeightEvent(
+                            profileId = o.optString("profileId", activeProfileId()),
+                            timestamp = o.getLong("timestamp"),
+                            millimeters = millimeters,
+                        ),
+                    )
+                }
             }
         }
         root.optJSONArray("pending")?.let { arr ->

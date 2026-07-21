@@ -16,8 +16,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DiaperEvent::class,
         TummyTimeEvent::class,
         SleepEvent::class,
+        WeightEvent::class,
+        HeightEvent::class,
     ],
-    version = 8,
+    version = 10,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -28,6 +30,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun diaperDao(): DiaperDao
     abstract fun tummyDao(): TummyDao
     abstract fun sleepDao(): SleepDao
+    abstract fun weightDao(): WeightDao
+    abstract fun heightDao(): HeightDao
 
     companion object {
         @Volatile
@@ -111,6 +115,30 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `weight_events` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`profileId` TEXT NOT NULL DEFAULT '', " +
+                        "`timestamp` INTEGER NOT NULL, " +
+                        "`grams` INTEGER NOT NULL DEFAULT 0)",
+                )
+            }
+        }
+
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `height_events` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`profileId` TEXT NOT NULL DEFAULT '', " +
+                        "`timestamp` INTEGER NOT NULL, " +
+                        "`millimeters` INTEGER NOT NULL DEFAULT 0)",
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -125,6 +153,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_5_6,
                     MIGRATION_6_7,
                     MIGRATION_7_8,
+                    MIGRATION_8_9,
+                    MIGRATION_9_10,
                 ).build()
                     .also { instance = it }
             }
