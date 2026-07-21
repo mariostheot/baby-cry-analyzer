@@ -107,6 +107,15 @@ fun HomeScreen(
     val tummy by viewModel.recentTummy.collectAsState()
     val careInsights by viewModel.careInsights.collectAsState()
     var showDiaper by remember { mutableStateOf(false) }
+    var showWeightAdd by remember { mutableStateOf(false) }
+    var showHeightAdd by remember { mutableStateOf(false) }
+
+    // A measurement dialog is specific to the baby shown when it was opened.
+    // Do not let it survive a profile switch and write to a different baby.
+    LaunchedEffect(profile.id) {
+        showWeightAdd = false
+        showHeightAdd = false
+    }
 
     Column(
         modifier = modifier
@@ -230,6 +239,25 @@ fun HomeScreen(
         }
 
         Spacer(Modifier.height(12.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            QuickAction(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Filled.Add,
+                label = tr("Προσθήκη βάρους"),
+                onClick = { showWeightAdd = true },
+            )
+            QuickAction(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Filled.Add,
+                label = tr("Προσθήκη ύψους"),
+                onClick = { showHeightAdd = true },
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
         TummyTimeCard(
             doneToday = tummyDoneToday(tummy),
             goal = TummyTime.dailyGoal(profile.ageDays()),
@@ -291,6 +319,28 @@ fun HomeScreen(
             dismissButton = {
                 TextButton(onClick = { showDiaper = false }) { Text(tr("Άκυρο")) }
             },
+        )
+    }
+    if (showWeightAdd) {
+        WeightEntryDialog(
+            initial = null,
+            onDismiss = { showWeightAdd = false },
+            onSave = { grams, timestamp ->
+                viewModel.addWeight(grams, timestamp)
+                showWeightAdd = false
+            },
+            onDelete = null,
+        )
+    }
+    if (showHeightAdd) {
+        HeightEntryDialog(
+            initial = null,
+            onDismiss = { showHeightAdd = false },
+            onSave = { millimeters, timestamp ->
+                viewModel.addHeight(millimeters, timestamp)
+                showHeightAdd = false
+            },
+            onDelete = null,
         )
     }
 }

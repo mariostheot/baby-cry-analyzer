@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.SelfImprovement
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -169,7 +170,6 @@ private fun AppRootContent(
     val pagerState = rememberPagerState(pageCount = { Tab.entries.size })
     var overlay by remember { mutableStateOf<Overlay?>(null) }
     var reportReturnTo by remember { mutableStateOf<Overlay?>(null) }
-    var growthReturnTo by remember { mutableStateOf<Overlay?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -289,12 +289,10 @@ private fun AppRootContent(
     fun closeOverlay() {
         val returnTo = when (overlay) {
             Overlay.REPORT -> reportReturnTo
-            Overlay.GROWTH -> growthReturnTo
             else -> null
         }
         overlay = returnTo
         if (overlay != Overlay.REPORT) reportReturnTo = null
-        if (overlay != Overlay.GROWTH) growthReturnTo = null
     }
 
     BackHandler(enabled = overlay != null) { closeOverlay() }
@@ -338,6 +336,11 @@ private fun AppRootContent(
                                 text = { Text(tr("Tummy Time")) },
                                 leadingIcon = { Icon(Icons.Filled.SelfImprovement, contentDescription = null) },
                                 onClick = { menuOpen = false; overlay = Overlay.TUMMY },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(tr("WHO καμπύλες ανάπτυξης")) },
+                                leadingIcon = { Icon(Icons.Filled.ShowChart, contentDescription = null) },
+                                onClick = { menuOpen = false; overlay = Overlay.GROWTH },
                             )
                             DropdownMenuItem(
                                 text = { Text(tr("Πότε να ανησυχήσεις")) },
@@ -387,10 +390,6 @@ private fun AppRootContent(
                         onExportReport = {
                             reportReturnTo = Overlay.SETTINGS
                             overlay = Overlay.REPORT
-                        },
-                        onOpenGrowth = {
-                            growthReturnTo = Overlay.SETTINGS
-                            overlay = Overlay.GROWTH
                         },
                         onBackup = { backupLauncher.launch("baby-cry-backup.json") },
                         onRestore = { restoreLauncher.launch(arrayOf("application/json")) },

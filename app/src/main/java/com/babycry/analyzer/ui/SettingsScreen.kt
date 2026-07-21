@@ -24,7 +24,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -64,7 +63,6 @@ private enum class Confirm { RESET_PERSONALIZATION, CLEAR_HISTORY }
 fun SettingsScreen(
     viewModel: CryViewModel,
     onExportReport: () -> Unit,
-    onOpenGrowth: () -> Unit,
     onBackup: () -> Unit,
     onRestore: () -> Unit,
     onExportDataset: () -> Unit,
@@ -298,26 +296,6 @@ fun SettingsScreen(
                     tr("Η εφαρμογή λαμβάνει πάντα υπόψη το τελευταίο τάισμα, την ώρα και την ηλικία του μωρού για πιο ακριβή εκτίμηση."),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                )
-            }
-        }
-
-        Spacer(Modifier.height(20.dp))
-
-        // ---- WHO growth reference ----
-        SectionTitle(tr("Ανάπτυξη"))
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
-                ActionRow(
-                    Icons.Filled.ShowChart,
-                    tr("WHO καμπύλες ανάπτυξης"),
-                    tr("Επίσημες καμπύλες αναφοράς βάρους και ύψους 0–5 ετών, με τις δικές σου καταγραφές."),
-                    onClick = {
-                        // The birth date and sex above are draft state until saved. Persist them
-                        // before opening the WHO screen so it never reads an older profile.
-                        focus.clearFocus()
-                        viewModel.saveProfileThen(name, birth, gender, onOpenGrowth)
-                    },
                 )
             }
         }

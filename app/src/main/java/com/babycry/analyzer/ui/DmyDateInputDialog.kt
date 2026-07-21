@@ -21,6 +21,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import com.babycry.analyzer.ui.i18n.tr
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -42,10 +44,12 @@ fun DmyDateInputDialog(
     val formatter = remember {
         SimpleDateFormat("dd/MM/yyyy", Locale.UK).apply { isLenient = false }
     }
-    var text by remember(initialDateMillis) {
-        mutableStateOf(initialDateMillis?.let { formatter.format(Date(it)) } ?: "")
+    var fieldValue by remember(initialDateMillis) {
+        val initialText = initialDateMillis?.let { formatter.format(Date(it)) } ?: ""
+        mutableStateOf(TextFieldValue(initialText, selection = TextRange(initialText.length)))
     }
     var showCalendar by remember { mutableStateOf(false) }
+    val text = fieldValue.text
     val selectedMillis = remember(text) { parseDmyDate(text, formatter) }
     val valid = selectedMillis != null && selectedMillis <= System.currentTimeMillis()
 
@@ -55,8 +59,17 @@ fun DmyDateInputDialog(
         text = {
             Column {
                 OutlinedTextField(
-                    value = text,
-                    onValueChange = { typed -> text = formatDmyDigits(typed) },
+                    value = fieldValue,
+                    onValueChange = { typed ->
+                        // Keep the caret after the automatically inserted slash. With a plain
+                        // String value Compose can restore a stale selection and scramble the
+                        // next digits (for example 02/62/2600 instead of 02/06/2026).
+                        val formatted = formatDmyDigits(typed.text)
+                        fieldValue = TextFieldValue(
+                            text = formatted,
+                            selection = TextRange(formatted.length),
+                        )
+                    },
                     label = { Text("DD/MM/YYYY") },
                     placeholder = { Text("DD/MM/YYYY") },
                     singleLine = true,
@@ -106,7 +119,8 @@ fun DmyDateInputDialog(
             confirmButton = {
                 TextButton(onClick = {
                     pickerState.selectedDateMillis?.let { millis ->
-                        text = utcFormatter.format(Date(millis))
+                        val formatted = utcFormatter.format(Date(millis))
+                        fieldValue = TextFieldValue(formatted, selection = TextRange(formatted.length))
                     }
                     showCalendar = false
                 }) { Text(tr("Εντάξει")) }

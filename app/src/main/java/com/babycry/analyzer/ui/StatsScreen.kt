@@ -68,17 +68,13 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val weights by viewModel.recentWeights.collectAsState()
     val heights by viewModel.recentHeights.collectAsState()
     val careInsights by viewModel.careInsights.collectAsState()
-    var showWeightAdd by remember { mutableStateOf(false) }
     var editWeight by remember { mutableStateOf<WeightEvent?>(null) }
-    var showHeightAdd by remember { mutableStateOf(false) }
     var editHeight by remember { mutableStateOf<HeightEvent?>(null) }
 
     LaunchedEffect(language, profile.id, events, feedbackCount) { stats = viewModel.loadStats() }
     LaunchedEffect(profile.id) {
         // A measurement belongs to one baby. Do not leave an edit dialog open across a switch.
-        showWeightAdd = false
         editWeight = null
-        showHeightAdd = false
         editHeight = null
     }
 
@@ -160,14 +156,12 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(18.dp))
         WeightCard(
             weights = weights,
-            onAdd = { showWeightAdd = true },
             onEdit = { editWeight = it },
         )
 
         Spacer(Modifier.height(18.dp))
         HeightCard(
             heights = heights,
-            onAdd = { showHeightAdd = true },
             onEdit = { editHeight = it },
         )
 
@@ -224,17 +218,6 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
         Caption(tr("Διαχείριση/μηδενισμός δεδομένων: στις Ρυθμίσεις (μενού ⋮ πάνω δεξιά)."))
     }
 
-    if (showWeightAdd) {
-        WeightEntryDialog(
-            initial = null,
-            onDismiss = { showWeightAdd = false },
-            onSave = { grams, timestamp ->
-                viewModel.addWeight(grams, timestamp)
-                showWeightAdd = false
-            },
-            onDelete = null,
-        )
-    }
     editWeight?.let { event ->
         WeightEntryDialog(
             initial = event,
@@ -247,17 +230,6 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                 viewModel.deleteWeight(event.id)
                 editWeight = null
             },
-        )
-    }
-    if (showHeightAdd) {
-        HeightEntryDialog(
-            initial = null,
-            onDismiss = { showHeightAdd = false },
-            onSave = { millimeters, timestamp ->
-                viewModel.addHeight(millimeters, timestamp)
-                showHeightAdd = false
-            },
-            onDelete = null,
         )
     }
     editHeight?.let { event ->
@@ -334,7 +306,6 @@ private fun BabyDayTimelineCard(
 @Composable
 private fun WeightCard(
     weights: List<WeightEvent>,
-    onAdd: () -> Unit,
     onEdit: (WeightEvent) -> Unit,
 ) {
     Card(Modifier.fillMaxWidth()) {
@@ -345,15 +316,12 @@ private fun WeightCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(tr("Βάρος"), style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = onAdd) {
-                    Text("＋ " + tr("Προσθήκη βάρους"))
-                }
             }
             if (weights.isEmpty()) {
                 Spacer(Modifier.height(8.dp))
                 Caption(
                     tr(
-                        "Δεν έχει καταγραφεί βάρος ακόμη. Πρόσθεσε το βάρος από τις επισκέψεις στον παιδίατρο.",
+                        "Δεν έχει καταγραφεί βάρος ακόμη. Πρόσθεσέ το από την Αρχική μετά από επίσκεψη στον παιδίατρο.",
                     ),
                 )
             } else {
@@ -473,7 +441,7 @@ private fun WeightLineChart(
 }
 
 @Composable
-private fun WeightEntryDialog(
+fun WeightEntryDialog(
     initial: WeightEvent?,
     onDismiss: () -> Unit,
     onSave: (grams: Int, timestamp: Long) -> Unit,
@@ -496,7 +464,7 @@ private fun WeightEntryDialog(
     val parsedKg = kgText.trim()
         .replace(',', '.')
         .toDoubleOrNull()
-        ?.takeIf { value -> kotlin.math.round(value * 1000).toInt() in 1..14_999 }
+        ?.takeIf { value -> kotlin.math.round(value * 1000).toInt() in 1..30_000 }
     val timestampValid = timestampMillis <= System.currentTimeMillis()
     val valid = parsedKg != null && timestampValid
 
@@ -507,7 +475,7 @@ private fun WeightEntryDialog(
             Column {
                 OutlinedTextField(
                     value = kgText,
-                    onValueChange = { kgText = it },
+                    onValueChange = { kgText = sanitizeDecimalMeasurementInput(it) },
                     label = { Text(tr("Βάρος (kg)")) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -567,7 +535,6 @@ private fun formatWeightKg(grams: Int): String {
 @Composable
 private fun HeightCard(
     heights: List<HeightEvent>,
-    onAdd: () -> Unit,
     onEdit: (HeightEvent) -> Unit,
 ) {
     Card(Modifier.fillMaxWidth()) {
@@ -578,15 +545,12 @@ private fun HeightCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(tr("Ύψος"), style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = onAdd) {
-                    Text("＋ " + tr("Προσθήκη ύψους"))
-                }
             }
             if (heights.isEmpty()) {
                 Spacer(Modifier.height(8.dp))
                 Caption(
                     tr(
-                        "Δεν έχει καταγραφεί ύψος ακόμη. Πρόσθεσε το ύψος από τις επισκέψεις στον παιδίατρο.",
+                        "Δεν έχει καταγραφεί ύψος ακόμη. Πρόσθεσέ το από την Αρχική μετά από επίσκεψη στον παιδίατρο.",
                     ),
                 )
             } else {
@@ -706,7 +670,7 @@ private fun HeightLineChart(
 }
 
 @Composable
-private fun HeightEntryDialog(
+fun HeightEntryDialog(
     initial: HeightEvent?,
     onDismiss: () -> Unit,
     onSave: (millimeters: Int, timestamp: Long) -> Unit,
@@ -740,7 +704,7 @@ private fun HeightEntryDialog(
             Column {
                 OutlinedTextField(
                     value = cmText,
-                    onValueChange = { cmText = it },
+                    onValueChange = { cmText = sanitizeDecimalMeasurementInput(it) },
                     label = { Text(tr("Ύψος (cm)")) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),

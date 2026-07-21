@@ -140,7 +140,7 @@ fun OnboardingScreen(
         Spacer(Modifier.height(16.dp))
         OutlinedTextField(
             value = weightKg,
-            onValueChange = { weightKg = it },
+            onValueChange = { weightKg = sanitizeDecimalMeasurementInput(it) },
             label = { Text(tr("Βάρος (kg)")) },
             supportingText = { Text(tr("Προαιρετικό — βάρος γέννησης σε κιλά (π.χ. 3,4).")) },
             singleLine = true,
@@ -163,7 +163,7 @@ fun OnboardingScreen(
         Spacer(Modifier.height(16.dp))
         OutlinedTextField(
             value = heightCm,
-            onValueChange = { heightCm = it },
+            onValueChange = { heightCm = sanitizeDecimalMeasurementInput(it) },
             label = { Text(tr("Ύψος (cm)")) },
             supportingText = { Text(tr("Προαιρετικό — μήκος γέννησης σε εκατοστά (π.χ. 50,5).")) },
             singleLine = true,
@@ -222,7 +222,7 @@ fun OnboardingScreen(
                     .replace(',', '.')
                     .toDoubleOrNull()
                     ?.takeIf { value ->
-                        kotlin.math.round(value * 1000).toInt() in 1..14_999
+                        kotlin.math.round(value * 1000).toInt() in 1..30_000
                     }
                 val parsedHeightCm = heightCm.trim()
                     .replace(',', '.')

@@ -78,8 +78,19 @@ fun GrowthScreen(
                 if (curves == null) {
                     GateMessage(tr("Δεν φορτώθηκαν τα δεδομένα WHO. Δοκίμασε ξανά αργότερα."))
                 } else {
+                    val sexLabel = when (profile.gender) {
+                        BabyGender.BOY -> tr("Αγόρι")
+                        BabyGender.GIRL -> tr("Κορίτσι")
+                        BabyGender.UNKNOWN -> ""
+                    }
                     Text(
-                        tr("Οι γραμμές δείχνουν τις επίσημες καμπύλες αναφοράς WHO (−2 SD, διάμεσος, +2 SD). Τα σημεία είναι οι δικές σου καταγραφές βάρους/ύψους."),
+                        "${tr("WHO σημείο αναφοράς για")}: $sexLabel",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        tr("Οι γραμμές δείχνουν το κάτω, μέσο και πάνω σημείο αναφοράς WHO. Τα σημεία είναι οι δικές σου καταγραφές βάρους/ύψους."),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     )
@@ -192,9 +203,9 @@ private fun GrowthChartCard(
             Text(title, style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                LegendDot(tr("WHO −2 SD"), MaterialTheme.colorScheme.outline)
-                LegendDot(tr("WHO διάμεσος"), MaterialTheme.colorScheme.outline.copy(alpha = 0.85f))
-                LegendDot(tr("WHO +2 SD"), MaterialTheme.colorScheme.outline.copy(alpha = 0.65f))
+                LegendDot(tr("Κάτω γραμμή αναφοράς WHO"), MaterialTheme.colorScheme.outline)
+                LegendDot(tr("Μέση γραμμή αναφοράς WHO"), MaterialTheme.colorScheme.outline.copy(alpha = 0.85f))
+                LegendDot(tr("Πάνω γραμμή αναφοράς WHO"), MaterialTheme.colorScheme.outline.copy(alpha = 0.65f))
                 LegendDot(tr("Οι καταγραφές σου"), MaterialTheme.colorScheme.primary)
             }
             if (userPoints.isEmpty()) {

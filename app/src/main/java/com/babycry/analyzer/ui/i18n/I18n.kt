@@ -86,8 +86,8 @@ private val EN: Map<String, String> = mapOf(
     "Προσθήκη βάρους" to "Add weight",
     "Καταγράφηκε το βάρος." to "Weight logged.",
     "Προαιρετικό — βάρος γέννησης σε κιλά (π.χ. 3,4)." to "Optional — birth weight in kg (e.g. 3.4).",
-    "Δεν έχει καταγραφεί βάρος ακόμη. Πρόσθεσε το βάρος από τις επισκέψεις στον παιδίατρο." to
-        "No weight recorded yet. Add weight from pediatrician visits.",
+    "Δεν έχει καταγραφεί βάρος ακόμη. Πρόσθεσέ το από την Αρχική μετά από επίσκεψη στον παιδίατρο." to
+        "No weight recorded yet. Add it from Home after a pediatrician visit.",
     "Τρέχον" to "Current",
     "Τρέχον βάρος" to "Current weight",
     "Συνολική μεταβολή" to "Total change",
@@ -102,8 +102,8 @@ private val EN: Map<String, String> = mapOf(
     "Προσθήκη ύψους" to "Add height",
     "Καταγράφηκε το ύψος." to "Height logged.",
     "Προαιρετικό — μήκος γέννησης σε εκατοστά (π.χ. 50,5)." to "Optional — birth length in cm (e.g. 50.5).",
-    "Δεν έχει καταγραφεί ύψος ακόμη. Πρόσθεσε το ύψος από τις επισκέψεις στον παιδίατρο." to
-        "No height recorded yet. Add height from pediatrician visits.",
+    "Δεν έχει καταγραφεί ύψος ακόμη. Πρόσθεσέ το από την Αρχική μετά από επίσκεψη στον παιδίατρο." to
+        "No height recorded yet. Add it from Home after a pediatrician visit.",
     "Τρέχον ύψος" to "Current height",
     "Επεξεργασία ύψους" to "Edit height",
     // Settings: pediatrician-confirmed colic/gas (per-baby prior)
@@ -591,6 +591,7 @@ private val EN: Map<String, String> = mapOf(
 
     // ---- WHO growth reference (Growth screen) ----
     "WHO καμπύλες ανάπτυξης" to "WHO growth reference curves",
+    "WHO σημείο αναφοράς για" to "WHO reference for",
     "Ανάπτυξη" to "Growth",
     "Επίσημες καμπύλες αναφοράς βάρους και ύψους 0–5 ετών, με τις δικές σου καταγραφές." to
         "Official WHO weight and height reference curves for ages 0–5 years, with your logged measurements.",
@@ -602,17 +603,17 @@ private val EN: Map<String, String> = mapOf(
         "The bundled WHO curves on this screen cover ages 0–5 years (0–60 months) only.",
     "Δεν φορτώθηκαν τα δεδομένα WHO. Δοκίμασε ξανά αργότερα." to
         "Could not load WHO data. Try again later.",
-    "Οι γραμμές δείχνουν τις επίσημες καμπύλες αναφοράς WHO (−2 SD, διάμεσος, +2 SD). Τα σημεία είναι οι δικές σου καταγραφές βάρους/ύψους." to
-        "Lines show official WHO reference curves (−2 SD, median, +2 SD). Points are your logged weight/height entries.",
+    "Οι γραμμές δείχνουν το κάτω, μέσο και πάνω σημείο αναφοράς WHO. Τα σημεία είναι οι δικές σου καταγραφές βάρους/ύψους." to
+        "The lines show the lower, middle, and upper WHO reference points. The points are your logged weight/height entries.",
     "Κάποιες καταγραφές δεν εμφανίζονται: μόνο μετρήσεις από τη γέννηση έως 60 μηνών ηλικίας." to
         "Some entries are hidden: only measurements from birth through 60 months of age are shown.",
     "Βάρος για την ηλικία" to "Weight for age",
     "Μήκος/ύψος για την ηλικία" to "Length/height for age",
     "Δεν υπάρχουν καταγραφές βάρους ακόμα." to "No weight entries yet.",
     "Δεν υπάρχουν καταγραφές ύψους ακόμα." to "No height entries yet.",
-    "WHO −2 SD" to "WHO −2 SD",
-    "WHO διάμεσος" to "WHO median",
-    "WHO +2 SD" to "WHO +2 SD",
+    "Κάτω γραμμή αναφοράς WHO" to "Lower WHO reference line",
+    "Μέση γραμμή αναφοράς WHO" to "Middle WHO reference line",
+    "Πάνω γραμμή αναφοράς WHO" to "Upper WHO reference line",
     "Οι καταγραφές σου" to "Your entries",
     "Ηλικία (μήνες)" to "Age (months)",
     "Οι καμπύλες είναι σημείο αναφοράς του WHO και όχι ιατρική διάγνωση. Συζήτησε ανησυχίες με παιδίατρο." to

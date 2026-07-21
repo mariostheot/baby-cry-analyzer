@@ -376,7 +376,7 @@ class CryRepository private constructor(
         timestamp: Long = System.currentTimeMillis(),
         profileId: String = activeProfileId(),
     ): Long = withContext(Dispatchers.IO) {
-        require(grams in 1..14_999) { "Weight must be between 1 g and 14.999 kg." }
+        require(grams in 1..30_000) { "Weight must be between 1 g and 30 kg." }
         require(timestamp <= System.currentTimeMillis()) { "Weight date cannot be in the future." }
         weightDao.insert(WeightEvent(profileId = profileId, timestamp = timestamp, grams = grams))
     }
@@ -387,7 +387,7 @@ class CryRepository private constructor(
         timestamp: Long,
         profileId: String = activeProfileId(),
     ): Boolean = withContext(Dispatchers.IO) {
-        require(grams in 1..14_999) { "Weight must be between 1 g and 14.999 kg." }
+        require(grams in 1..30_000) { "Weight must be between 1 g and 30 kg." }
         require(timestamp <= System.currentTimeMillis()) { "Weight date cannot be in the future." }
         weightDao.updateEntry(id, profileId, timestamp, grams) > 0
     }
@@ -1555,7 +1555,7 @@ class CryRepository private constructor(
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
                 val grams = o.optInt("grams", 0)
-                if (grams in 1..14_999) {
+                if (grams in 1..30_000) {
                     weightDao.insert(
                         WeightEvent(
                             profileId = o.optString("profileId", activeProfileId()),

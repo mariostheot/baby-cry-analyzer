@@ -791,22 +791,6 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Saves draft profile data before opening a screen that relies on birth date or gender. */
-    fun saveProfileThen(
-        name: String,
-        birthMillis: Long?,
-        gender: BabyGender,
-        onSaved: () -> Unit,
-    ) {
-        viewModelScope.launch {
-            repo.updateActiveProfile(name.trim(), birthMillis, gender)
-            refreshProfiles()
-            scheduleFeedReminder()
-            scheduleTummyReminder()
-            onSaved()
-        }
-    }
-
     /** First-run: save the baby profile and never show the welcome screen again. */
     fun completeOnboarding(
         name: String,
