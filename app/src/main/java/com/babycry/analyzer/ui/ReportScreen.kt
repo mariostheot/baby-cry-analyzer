@@ -2,14 +2,10 @@ package com.babycry.analyzer.ui
 
 import android.content.Context
 import android.content.Intent
-import android.os.Bundle
-import android.os.CancellationSignal
-import android.os.ParcelFileDescriptor
-import android.print.PageRange
+import android.graphics.pdf.PdfDocument
 import android.print.PrintAttributes
-import android.print.PrintDocumentAdapter
-import android.print.PrintDocumentInfo
 import android.print.PrintManager
+import android.view.View
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -47,6 +43,7 @@ import com.babycry.analyzer.ui.i18n.AppLang
 import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.tr
 import java.io.File
+import java.io.FileOutputStream
 
 /**
  * Shows the generated HTML report right inside the app (a WebView), so tapping "Report"
@@ -79,6 +76,8 @@ fun ReportScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
             }
         } else {
             val actionsEnabled = webRef != null && pageReady && loadedHtml == h && !sharing
+            val shareChooserTitle = tr("Κοινοποίηση αναφοράς")
+            val pdfFailedMessage = tr("Δεν ήταν δυνατή η δημιουργία του PDF. Δοκίμασε ξανά.")
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -95,19 +94,18 @@ fun ReportScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                 }
                 Button(
                     onClick = {
-                        val web = webRef ?: return@Button
                         sharing = true
                         shareReportPdf(
                             context = context,
-                            web = web,
+                            html = h,
                             subject = reportSubject(),
-                            chooserTitle = tr("Κοινοποίηση αναφοράς"),
+                            chooserTitle = shareChooserTitle,
                         ) { ok ->
                             sharing = false
                             if (!ok) {
                                 Toast.makeText(
                                     context,
-                                    tr("Δεν ήταν δυνατή η δημιουργία του PDF. Δοκίμασε ξανά."),
+                                    pdfFailedMessage,
                                     Toast.LENGTH_SHORT,
                                 ).show()
                             }
@@ -161,77 +159,82 @@ private fun printReport(context: Context, web: WebView) {
 }
 
 /**
- * Renders the report WebView to a PDF file in the cache and opens the Android share sheet so the
- * parent can send it straight to a pediatrician (email, messaging, Drive, etc.). [onResult] is
- * invoked on the main thread with success/failure.
+ * Renders the report HTML to a PDF file in the cache and opens the Android share sheet so the
+ * parent can send it straight to a pediatrician (email, messaging, Drive, etc.).
+ *
+ * We load the HTML into a fresh off-screen [WebView] and draw it onto a paginated [PdfDocument].
+ * The print-framework adapter (`onLayout`/`onWrite`) is intentionally avoided because its callback
+ * classes have package-private constructors and cannot be subclassed from app code. All work runs
+ * on the main thread (WebView requires it); [onResult] is invoked there with success/failure.
  */
 private fun shareReportPdf(
     context: Context,
-    web: WebView,
+    html: String,
     subject: String,
     chooserTitle: String,
     onResult: (Boolean) -> Unit,
 ) {
-    val attributes = PrintAttributes.Builder()
-        .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
-        .setResolution(PrintAttributes.Resolution("pdf", "pdf", 300, 300))
-        .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
-        .build()
-    val adapter = web.createPrintDocumentAdapter("NiniSense-report")
-    val dir = File(context.cacheDir, "reports")
-    if (!dir.exists()) dir.mkdirs()
-    val file = File(dir, "NiniSense-report.pdf")
-
-    adapter.onLayout(
-        null,
-        attributes,
-        null,
-        object : PrintDocumentAdapter.LayoutResultCallback() {
-            override fun onLayoutFinished(info: PrintDocumentInfo?, changed: Boolean) {
-                val pfd = openForWrite(file)
-                if (pfd == null) {
+    val web = WebView(context)
+    web.settings.javaScriptEnabled = false
+    web.webViewClient = object : WebViewClient() {
+        private var handled = false
+        override fun onPageFinished(view: WebView, url: String?) {
+            if (handled) return
+            handled = true
+            // Let layout settle before measuring/drawing the full content height.
+            view.postDelayed({
+                val file = runCatching { renderWebViewToPdf(context, view) }.getOrNull()
+                if (file == null) {
                     onResult(false)
-                    return
+                    return@postDelayed
                 }
-                adapter.onWrite(
-                    arrayOf(PageRange.ALL_PAGES),
-                    pfd,
-                    CancellationSignal(),
-                    object : PrintDocumentAdapter.WriteResultCallback() {
-                        override fun onWriteFinished(pages: Array<out PageRange>?) {
-                            runCatching { pfd.close() }
-                            val ok = runCatching {
-                                launchShare(context, file, subject, chooserTitle)
-                            }.isSuccess
-                            onResult(ok)
-                        }
-
-                        override fun onWriteFailed(error: CharSequence?) {
-                            runCatching { pfd.close() }
-                            onResult(false)
-                        }
-                    },
-                )
-            }
-
-            override fun onLayoutFailed(error: CharSequence?) {
-                onResult(false)
-            }
-        },
-        Bundle(),
-    )
+                val ok = runCatching { launchShare(context, file, subject, chooserTitle) }.isSuccess
+                onResult(ok)
+            }, 250)
+        }
+    }
+    web.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
 }
 
-private fun openForWrite(file: File): ParcelFileDescriptor? = try {
-    if (file.exists()) file.delete()
-    ParcelFileDescriptor.open(
-        file,
-        ParcelFileDescriptor.MODE_READ_WRITE or
-            ParcelFileDescriptor.MODE_CREATE or
-            ParcelFileDescriptor.MODE_TRUNCATE,
+/** A4 page in points at 72 dpi (595 x 842). */
+private const val PDF_PAGE_WIDTH = 595
+private const val PDF_PAGE_HEIGHT = 842
+
+private fun renderWebViewToPdf(context: Context, web: WebView): File {
+    web.measure(
+        View.MeasureSpec.makeMeasureSpec(PDF_PAGE_WIDTH, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
     )
-} catch (_: Exception) {
-    null
+    val totalHeight = web.measuredHeight.coerceAtLeast(PDF_PAGE_HEIGHT)
+    web.layout(0, 0, PDF_PAGE_WIDTH, totalHeight)
+
+    val document = PdfDocument()
+    try {
+        var top = 0
+        var pageNumber = 1
+        while (top < totalHeight) {
+            val pageInfo = PdfDocument.PageInfo
+                .Builder(PDF_PAGE_WIDTH, PDF_PAGE_HEIGHT, pageNumber)
+                .build()
+            val page = document.startPage(pageInfo)
+            val canvas = page.canvas
+            canvas.save()
+            canvas.translate(0f, -top.toFloat())
+            web.draw(canvas)
+            canvas.restore()
+            document.finishPage(page)
+            top += PDF_PAGE_HEIGHT
+            pageNumber++
+        }
+        val dir = File(context.cacheDir, "reports")
+        if (!dir.exists()) dir.mkdirs()
+        val file = File(dir, "NiniSense-report.pdf")
+        if (file.exists()) file.delete()
+        FileOutputStream(file).use { document.writeTo(it) }
+        return file
+    } finally {
+        document.close()
+    }
 }
 
 private fun launchShare(context: Context, file: File, subject: String, chooserTitle: String) {
