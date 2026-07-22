@@ -28,6 +28,8 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.SelfImprovement
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShowChart
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -134,7 +136,7 @@ private enum class Overlay(val title: String) {
     SOOTHE("Ηρέμησε το μωρό"),
     SAFETY("Πότε να ανησυχήσεις"),
     TUMMY("Tummy Time"),
-    GROWTH("WHO καμπύλες ανάπτυξης"),
+    GROWTH("Καμπύλες ανάπτυξης"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -176,6 +178,7 @@ private fun AppRootContent(
     val snackbarHostState = remember { SnackbarHostState() }
     val home by viewModel.home.collectAsState()
     val onboardingDone by viewModel.onboardingComplete.collectAsState()
+    val backupOverdue by viewModel.backupOverdue.collectAsState()
     val interactionLocked = home.phase == Phase.RECORDING || home.phase == Phase.ANALYZING
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -324,7 +327,13 @@ private fun AppRootContent(
                 actions = {
                     if (overlay == null && !interactionLocked) {
                         IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = tr("Μενού"))
+                            if (backupOverdue) {
+                                BadgedBox(badge = { Badge() }) {
+                                    Icon(Icons.Filled.MoreVert, contentDescription = tr("Μενού"))
+                                }
+                            } else {
+                                Icon(Icons.Filled.MoreVert, contentDescription = tr("Μενού"))
+                            }
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
@@ -338,7 +347,7 @@ private fun AppRootContent(
                                 onClick = { menuOpen = false; overlay = Overlay.TUMMY },
                             )
                             DropdownMenuItem(
-                                text = { Text(tr("WHO καμπύλες ανάπτυξης")) },
+                                text = { Text(tr("Καμπύλες ανάπτυξης")) },
                                 leadingIcon = { Icon(Icons.Filled.ShowChart, contentDescription = null) },
                                 onClick = { menuOpen = false; overlay = Overlay.GROWTH },
                             )
@@ -420,6 +429,7 @@ private fun AppRootContent(
                             onOpenStats = {
                                 scope.launch { pagerState.animateScrollToPage(Tab.STATS.ordinal) }
                             },
+                            onBackup = { backupLauncher.launch("baby-cry-backup.json") },
                         )
                         Tab.HISTORY -> HistoryScreen(viewModel)
                         Tab.LIBRARY -> LibraryScreen(viewModel = viewModel)

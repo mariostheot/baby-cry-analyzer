@@ -16,12 +16,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -30,29 +34,41 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.babycry.analyzer.data.HeightEvent
-import com.babycry.analyzer.data.WeightEvent
+import com.babycry.analyzer.growth.WhoGrowthCurves
 import com.babycry.analyzer.growth.WhoGrowthCurvesLoader
-import com.babycry.analyzer.growth.WhoGrowthMath
 import com.babycry.analyzer.growth.WhoGrowthPoint
 import com.babycry.analyzer.model.BabyGender
-import com.babycry.analyzer.model.BabyProfile
 import com.babycry.analyzer.ui.i18n.AppLang
 import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.tr
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
-private data class PlottedPoint(val ageMonths: Double, val value: Float)
-
+/**
+ * An informational reference screen (like Tummy Time): it shows the WHO 0–5 year weight- and
+ * height-for-age reference curves for a chosen sex. It intentionally does NOT plot the baby's own
+ * measurements — those live in the History screen.
+ */
 @Composable
 fun GrowthScreen(
     viewModel: CryViewModel,
     modifier: Modifier = Modifier,
 ) {
     val profile by viewModel.profile.collectAsState()
-    val weights by viewModel.recentWeights.collectAsState()
-    val heights by viewModel.recentHeights.collectAsState()
     val context = LocalContext.current
+
+    // Default to the active baby's sex if we know it, otherwise show boys' curves first.
+    var selectedSex by remember(profile.id) {
+        mutableStateOf(if (profile.gender == BabyGender.GIRL) BabyGender.GIRL else BabyGender.BOY)
+    }
+
+    // Assets are read off the main thread; the loader also caches per sex.
+    val load by produceState<GrowthLoad>(initialValue = GrowthLoad.Loading, selectedSex) {
+        value = GrowthLoad.Loading
+        val loaded = withContext(Dispatchers.IO) { WhoGrowthCurvesLoader.load(context, selectedSex) }
+        value = if (loaded != null) GrowthLoad.Ready(loaded) else GrowthLoad.Failed
+    }
 
     Column(
         modifier = modifier
@@ -61,87 +77,73 @@ fun GrowthScreen(
             .padding(16.dp),
     ) {
         Text(
-            tr("WHO καμπύλες ανάπτυξης"),
+            tr("Καμπύλες ανάπτυξης"),
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
         )
+        Text(
+            tr("Καμπύλες αναφοράς βάρους και ύψους ανά ηλικία και φύλο, από τον Παγκόσμιο Οργανισμό Υγείας (ΠΟΥ). Ενημερωτικό βοήθημα — δεν χρησιμοποιεί τα δικά σου δεδομένα."),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+        )
+        Spacer(Modifier.height(16.dp))
 
-        val birth = profile.birthMillis
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = selectedSex == BabyGender.BOY,
+                onClick = { selectedSex = BabyGender.BOY },
+                label = { Text(tr("Αγόρι")) },
+            )
+            FilterChip(
+                selected = selectedSex == BabyGender.GIRL,
+                onClick = { selectedSex = BabyGender.GIRL },
+                label = { Text(tr("Κορίτσι")) },
+            )
+        }
+        Spacer(Modifier.height(16.dp))
 
-        when {
-            birth == null -> GateMessage(tr("Για τις καμπύλες WHO χρειάζεται η ημερομηνία γέννησης. Όρισέ την στα «Στοιχεία ενεργού μωρού» στις Ρυθμίσεις και πάτα «Πίσω»."))
-            profile.gender == BabyGender.UNKNOWN -> GateMessage(tr("Για τις καμπύλες WHO χρειάζεται το φύλο (αγόρι ή κορίτσι). Όρισέ το στα «Στοιχεία ενεργού μωρού» στις Ρυθμίσεις και πάτα «Πίσω»."))
-            else -> {
-                val curves = remember(profile.gender) {
-                    WhoGrowthCurvesLoader.load(context, profile.gender)
-                }
-                if (curves == null) {
-                    GateMessage(tr("Δεν φορτώθηκαν τα δεδομένα WHO. Δοκίμασε ξανά αργότερα."))
-                } else {
-                    val sexLabel = when (profile.gender) {
-                        BabyGender.BOY -> tr("Αγόρι")
-                        BabyGender.GIRL -> tr("Κορίτσι")
-                        BabyGender.UNKNOWN -> ""
-                    }
-                    Text(
-                        "${tr("WHO σημείο αναφοράς για")}: $sexLabel",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        tr("Οι γραμμές δείχνουν το κάτω, μέσο και πάνω σημείο αναφοράς WHO. Τα σημεία είναι οι δικές σου καταγραφές βάρους/ύψους."),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    )
-                    Spacer(Modifier.height(16.dp))
+        when (val current = load) {
+            GrowthLoad.Loading -> Text(
+                tr("Φόρτωση..."),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+            GrowthLoad.Failed -> GateMessage(tr("Δεν φορτώθηκαν τα δεδομένα WHO. Δοκίμασε ξανά αργότερα."))
+            is GrowthLoad.Ready -> {
+                GrowthChartCard(
+                    title = tr("Βάρος για την ηλικία"),
+                    yUnitLabel = tr("kg"),
+                    reference = current.curves.weight,
+                    valueFromPoint = { it / 1000f },
+                    formatY = { formatKg(it) },
+                )
+                Spacer(Modifier.height(16.dp))
+                GrowthChartCard(
+                    title = tr("Μήκος/ύψος για την ηλικία"),
+                    yUnitLabel = tr("cm"),
+                    reference = current.curves.height,
+                    valueFromPoint = { it / 10f },
+                    formatY = { formatCm(it) },
+                )
 
-                    val weightPlot = plotWeightPoints(profile, weights)
-                    val heightPlot = plotHeightPoints(profile, heights)
-                    val weightSkipped = weights.isNotEmpty() && weightPlot.isEmpty()
-                    val heightSkipped = heights.isNotEmpty() && heightPlot.isEmpty()
-
-                    if (weightSkipped || heightSkipped) {
-                        Text(
-                            tr("Κάποιες καταγραφές δεν εμφανίζονται: μόνο μετρήσεις από τη γέννηση έως 60 μηνών ηλικίας."),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                        )
-                        Spacer(Modifier.height(8.dp))
-                    }
-
-                    GrowthChartCard(
-                        title = tr("Βάρος για την ηλικία"),
-                        yUnitLabel = tr("kg"),
-                        reference = curves.weight,
-                        valueFromPoint = { it / 1000f },
-                        userPoints = weightPlot,
-                        formatY = { formatKg(it) },
-                        noDataCaption = tr("Δεν υπάρχουν καταγραφές βάρους ακόμα."),
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    GrowthChartCard(
-                        title = tr("Μήκος/ύψος για την ηλικία"),
-                        yUnitLabel = tr("cm"),
-                        reference = curves.height,
-                        valueFromPoint = { it / 10f },
-                        userPoints = heightPlot,
-                        formatY = { formatCm(it) },
-                        noDataCaption = tr("Δεν υπάρχουν καταγραφές ύψους ακόμα."),
-                    )
-
-                    Spacer(Modifier.height(16.dp))
-                    DisclaimerCard()
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        tr("Πηγή δεδομένων: WHO Child Growth Standards, 2006. Χωρίς έγκριση ή σύνδεση με τον WHO."),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                    )
-                }
+                Spacer(Modifier.height(16.dp))
+                DisclaimerCard()
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    tr("Πηγή δεδομένων: WHO Child Growth Standards, 2006. Χωρίς έγκριση ή σύνδεση με τον WHO."),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                )
             }
         }
+        Spacer(Modifier.height(16.dp))
     }
+}
+
+private sealed interface GrowthLoad {
+    data object Loading : GrowthLoad
+    data object Failed : GrowthLoad
+    data class Ready(val curves: WhoGrowthCurves) : GrowthLoad
 }
 
 @Composable
@@ -172,31 +174,13 @@ private fun DisclaimerCard() {
     }
 }
 
-private fun plotWeightPoints(profile: BabyProfile, events: List<WeightEvent>): List<PlottedPoint> {
-    val birth = profile.birthMillis ?: return emptyList()
-    return events.mapNotNull { e ->
-        val age = WhoGrowthMath.ageMonthsForPlot(birth, e.timestamp) ?: return@mapNotNull null
-        PlottedPoint(age, e.grams / 1000f)
-    }.sortedBy { it.ageMonths }
-}
-
-private fun plotHeightPoints(profile: BabyProfile, events: List<HeightEvent>): List<PlottedPoint> {
-    val birth = profile.birthMillis ?: return emptyList()
-    return events.mapNotNull { e ->
-        val age = WhoGrowthMath.ageMonthsForPlot(birth, e.timestamp) ?: return@mapNotNull null
-        PlottedPoint(age, e.millimeters / 10f)
-    }.sortedBy { it.ageMonths }
-}
-
 @Composable
 private fun GrowthChartCard(
     title: String,
     yUnitLabel: String,
     reference: List<WhoGrowthPoint>,
     valueFromPoint: (Int) -> Float,
-    userPoints: List<PlottedPoint>,
     formatY: (Float) -> String,
-    noDataCaption: String,
 ) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
@@ -206,21 +190,11 @@ private fun GrowthChartCard(
                 LegendDot(tr("Κάτω γραμμή αναφοράς WHO"), MaterialTheme.colorScheme.outline)
                 LegendDot(tr("Μέση γραμμή αναφοράς WHO"), MaterialTheme.colorScheme.outline.copy(alpha = 0.85f))
                 LegendDot(tr("Πάνω γραμμή αναφοράς WHO"), MaterialTheme.colorScheme.outline.copy(alpha = 0.65f))
-                LegendDot(tr("Οι καταγραφές σου"), MaterialTheme.colorScheme.primary)
-            }
-            if (userPoints.isEmpty()) {
-                Text(
-                    noDataCaption,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(top = 4.dp),
-                )
             }
             Spacer(Modifier.height(8.dp))
             WhoReferenceChart(
                 reference = reference,
                 valueFromPoint = valueFromPoint,
-                userPoints = userPoints,
                 yUnitLabel = yUnitLabel,
                 formatY = formatY,
             )
@@ -243,30 +217,39 @@ private fun LegendDot(label: String, color: Color) {
 private fun WhoReferenceChart(
     reference: List<WhoGrowthPoint>,
     valueFromPoint: (Int) -> Float,
-    userPoints: List<PlottedPoint>,
     yUnitLabel: String,
     formatY: (Float) -> String,
 ) {
     val labelStyle = MaterialTheme.typography.labelSmall
     val labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-    val primary = MaterialTheme.colorScheme.primary
     val outline = MaterialTheme.colorScheme.outline
+    val grid = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
 
     val refLower = reference.map { valueFromPoint(it.lower) }
     val refMed = reference.map { valueFromPoint(it.median) }
     val refUpper = reference.map { valueFromPoint(it.upper) }
-    val allY = refLower + refMed + refUpper + userPoints.map { it.value }
-    val yMin = (allY.minOrNull() ?: 0f) * 0.95f
-    val yMax = (allY.maxOrNull() ?: 1f) * 1.05f
+    // Scale strictly to the reference band so the curves fill the plot (no empty headroom).
+    val yMinRaw = refLower.minOrNull() ?: 0f
+    val yMaxRaw = refUpper.maxOrNull() ?: 1f
+    val pad = ((yMaxRaw - yMinRaw) * 0.05f).coerceAtLeast(0.01f)
+    val yMin = (yMinRaw - pad).coerceAtLeast(0f)
+    val yMax = yMaxRaw + pad
     val yRange = (yMax - yMin).coerceAtLeast(0.1f)
+    val yMid = (yMin + yMax) / 2f
 
     Column {
-        Box(Modifier.fillMaxWidth().height(200.dp)) {
+        Box(Modifier.fillMaxWidth().height(220.dp)) {
             Text(
                 "${formatY(yMax)} $yUnitLabel",
                 style = labelStyle,
                 color = labelColor,
                 modifier = Modifier.align(Alignment.TopStart),
+            )
+            Text(
+                formatY(yMid),
+                style = labelStyle,
+                color = labelColor,
+                modifier = Modifier.align(Alignment.CenterStart),
             )
             Text(
                 "${formatY(yMin)} $yUnitLabel",
@@ -284,6 +267,24 @@ private fun WhoReferenceChart(
                 fun xFor(month: Float): Float = (month / 60f) * w
                 fun yFor(v: Float): Float = h - ((v - yMin) / yRange) * h
 
+                // Light vertical guides every 12 months so ages are easy to read across.
+                listOf(0, 12, 24, 36, 48, 60).forEach { m ->
+                    val x = xFor(m.toFloat())
+                    drawLine(
+                        color = grid,
+                        start = Offset(x, 0f),
+                        end = Offset(x, h),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                }
+                // Horizontal mid guide.
+                drawLine(
+                    color = grid,
+                    start = Offset(0f, h / 2f),
+                    end = Offset(w, h / 2f),
+                    strokeWidth = 1.dp.toPx(),
+                )
+
                 fun drawCurve(values: List<Float>, color: Color, stroke: Float) {
                     if (values.isEmpty()) return
                     val path = Path()
@@ -296,35 +297,8 @@ private fun WhoReferenceChart(
                 }
 
                 drawCurve(refLower, outline.copy(alpha = 0.45f), 1.5.dp.toPx())
-                drawCurve(refMed, outline.copy(alpha = 0.75f), 2.dp.toPx())
+                drawCurve(refMed, outline.copy(alpha = 0.85f), 2.5.dp.toPx())
                 drawCurve(refUpper, outline.copy(alpha = 0.45f), 1.5.dp.toPx())
-
-                if (userPoints.size == 1) {
-                    val p = userPoints.first()
-                    drawCircle(
-                        color = primary,
-                        radius = 5.dp.toPx(),
-                        center = Offset(xFor(p.ageMonths.toFloat()), yFor(p.value)),
-                    )
-                } else if (userPoints.size > 1) {
-                    for (i in 0 until userPoints.lastIndex) {
-                        val a = userPoints[i]
-                        val b = userPoints[i + 1]
-                        drawLine(
-                            color = primary,
-                            start = Offset(xFor(a.ageMonths.toFloat()), yFor(a.value)),
-                            end = Offset(xFor(b.ageMonths.toFloat()), yFor(b.value)),
-                            strokeWidth = 2.5.dp.toPx(),
-                        )
-                    }
-                    userPoints.forEach { p ->
-                        drawCircle(
-                            color = primary,
-                            radius = 4.dp.toPx(),
-                            center = Offset(xFor(p.ageMonths.toFloat()), yFor(p.value)),
-                        )
-                    }
-                }
             }
         }
         Row(
@@ -348,10 +322,10 @@ private fun WhoReferenceChart(
 
 private fun formatKg(v: Float): String {
     val locale = if (currentAppLang == AppLang.EN) Locale.ENGLISH else Locale("el")
-    return String.format(locale, "%.2f", v)
+    return String.format(locale, "%.1f", v)
 }
 
 private fun formatCm(v: Float): String {
     val locale = if (currentAppLang == AppLang.EN) Locale.ENGLISH else Locale("el")
-    return String.format(locale, "%.1f", v)
+    return String.format(locale, "%.0f", v)
 }

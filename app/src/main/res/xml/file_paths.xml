@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Report PDFs are written to cacheDir/reports before sharing. -->
+    <cache-path
+        name="reports"
+        path="reports/" />
+</paths>

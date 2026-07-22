@@ -200,6 +200,25 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CareInsightsUiState())
 
+    // True once there is anything worth backing up on this device.
+    private val hasTrackedData: kotlinx.coroutines.flow.Flow<Boolean> = combine(
+        recentEvents,
+        recentFeedings,
+        recentDiapers,
+        recentSleep,
+        recentTummy,
+    ) { e, f, d, s, t ->
+        e.isNotEmpty() || f.isNotEmpty() || d.isNotEmpty() || s.isNotEmpty() || t.isNotEmpty()
+    }
+
+    /**
+     * Nudge the parent to back up when there is data to lose and either no backup was ever made
+     * or the last one is older than a month — so a phone change doesn't wipe the baby's history.
+     */
+    val backupOverdue: StateFlow<Boolean> = combine(_lastBackupAt, hasTrackedData) { last, hasData ->
+        hasData && (last <= 0L || System.currentTimeMillis() - last > BACKUP_STALE_MS)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     private val _tummyReminderEnabled = MutableStateFlow(repo.isTummyReminderEnabled())
     val tummyReminderEnabled: StateFlow<Boolean> = _tummyReminderEnabled.asStateFlow()
 
@@ -951,6 +970,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         const val MAX_RECORD_MS = 7000
         const val MIN_LISTEN_MS = 2500 // capture at least this much before auto-finishing
         const val REMINDER_DELAY_MIN = 15L // ask "why did it cry?" ~15 min later (once the cause is clear)
+        const val BACKUP_STALE_MS = 30L * 24 * 60 * 60 * 1000 // remind to back up monthly
 
         private fun recordedMessage(reason: CryReason): String = when (currentAppLang) {
             AppLang.EN -> "Recorded: ${trS(reason.displayName)}. Thanks!"

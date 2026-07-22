@@ -56,8 +56,10 @@ import com.babycry.analyzer.context.ContextPrior
 import com.babycry.analyzer.data.CryEvent
 import com.babycry.analyzer.data.DiaperEvent
 import com.babycry.analyzer.data.FeedingEvent
+import com.babycry.analyzer.data.HeightEvent
 import com.babycry.analyzer.data.SleepEvent
 import com.babycry.analyzer.data.TummyTimeEvent
+import com.babycry.analyzer.data.WeightEvent
 import com.babycry.analyzer.model.BabyProfile
 import com.babycry.analyzer.model.CryReason
 import com.babycry.analyzer.model.DiaperType
@@ -86,6 +88,8 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val sleeps by viewModel.recentSleep.collectAsState()
     val diapers by viewModel.recentDiapers.collectAsState()
     val tummy by viewModel.recentTummy.collectAsState()
+    val weights by viewModel.recentWeights.collectAsState()
+    val heights by viewModel.recentHeights.collectAsState()
     val profile by viewModel.profile.collectAsState()
     val labels = viewModel.labels
     val language by viewModel.language.collectAsState()
@@ -93,8 +97,16 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     var editEvent by remember { mutableStateOf<CryEvent?>(null) }
     var editFeeding by remember { mutableStateOf<FeedingEvent?>(null) }
     var editSleep by remember { mutableStateOf<SleepEvent?>(null) }
+    var editWeight by remember { mutableStateOf<WeightEvent?>(null) }
+    var editHeight by remember { mutableStateOf<HeightEvent?>(null) }
     var pendingDelete by remember { mutableStateOf<CryEvent?>(null) }
     var timelineFilter by remember { mutableStateOf(HistoryFilter.ALL) }
+
+    // A measurement belongs to one baby. Do not leave an edit dialog open across a switch.
+    LaunchedEffect(profile.id) {
+        editWeight = null
+        editHeight = null
+    }
 
     val now = System.currentTimeMillis()
     val todayStart = remember(now) { startOfDay(now) }
@@ -249,6 +261,26 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                 }
             }
             item { PatternsCard(summary) }
+        }
+
+        item {
+            Text(
+                tr("Βάρος & ύψος"),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+        }
+        item {
+            WeightHistoryCard(
+                weights = weights,
+                onEdit = { editWeight = it },
+            )
+        }
+        item {
+            HeightHistoryCard(
+                heights = heights,
+                onEdit = { editHeight = it },
+            )
         }
 
         item { Spacer(Modifier.height(16.dp)) }
@@ -531,6 +563,35 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
             },
             dismissButton = {
                 TextButton(onClick = { editSleep = null }) { Text(tr("Κλείσιμο")) }
+            },
+        )
+    }
+
+    editWeight?.let { event ->
+        WeightEntryDialog(
+            initial = event,
+            onDismiss = { editWeight = null },
+            onSave = { grams, timestamp ->
+                viewModel.updateWeight(event.id, grams, timestamp)
+                editWeight = null
+            },
+            onDelete = {
+                viewModel.deleteWeight(event.id)
+                editWeight = null
+            },
+        )
+    }
+    editHeight?.let { event ->
+        HeightEntryDialog(
+            initial = event,
+            onDismiss = { editHeight = null },
+            onSave = { millimeters, timestamp ->
+                viewModel.updateHeight(event.id, millimeters, timestamp)
+                editHeight = null
+            },
+            onDelete = {
+                viewModel.deleteHeight(event.id)
+                editHeight = null
             },
         )
     }

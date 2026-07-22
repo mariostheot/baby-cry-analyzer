@@ -284,6 +284,14 @@ private val EN: Map<String, String> = mapOf(
     "Προβολή / Εξαγωγή αναφοράς" to "View / Export report",
     "Ανοίγει μια όμορφη αναφορά· από εκεί την αποθηκεύεις ή τη μοιράζεσαι ως PDF" to
         "Opens a nice report; from there you save or share it as PDF",
+    "Αποθήκευση PDF" to "Save PDF",
+    "Κοινοποίηση αναφοράς" to "Share report",
+    "Δεν ήταν δυνατή η δημιουργία του PDF. Δοκίμασε ξανά." to
+        "Couldn't create the PDF. Please try again.",
+    // Backup reminder (Home)
+    "Κράτα ασφαλή τα δεδομένα σου" to "Keep your data safe",
+    "Δεν έχεις κρατήσει πρόσφατο backup. Κάνε ένα τώρα ώστε να μη χαθεί το ιστορικό του μωρού αν αλλάξεις ή χάσεις το κινητό." to
+        "You haven't backed up recently. Do it now so your baby's history isn't lost if you change or lose your phone.",
     "Δημιουργία backup" to "Create backup",
     "Αποθήκευση όλων των δεδομένων σε αρχείο" to "Save all data to a file",
     "Επαναφορά από backup" to "Restore from backup",
@@ -589,33 +597,19 @@ private val EN: Map<String, String> = mapOf(
     "Πηγές: AAP/HealthyChildren, Pathways.org, NHS, WHO. Ενημερωτικό βοήθημα, όχι ιατρική συμβουλή." to
         "Sources: AAP/HealthyChildren, Pathways.org, NHS, WHO. Informational aid, not medical advice.",
 
-    // ---- WHO growth reference (Growth screen) ----
-    "WHO καμπύλες ανάπτυξης" to "WHO growth reference curves",
-    "WHO σημείο αναφοράς για" to "WHO reference for",
-    "Ανάπτυξη" to "Growth",
-    "Επίσημες καμπύλες αναφοράς βάρους και ύψους 0–5 ετών, με τις δικές σου καταγραφές." to
-        "Official WHO weight and height reference curves for ages 0–5 years, with your logged measurements.",
-    "Για τις καμπύλες WHO χρειάζεται η ημερομηνία γέννησης. Όρισέ την στα «Στοιχεία ενεργού μωρού» στις Ρυθμίσεις και πάτα «Πίσω»." to
-        "A birth date is required for WHO curves. Set it under \"Active baby details\" in Settings, then tap Back.",
-    "Για τις καμπύλες WHO χρειάζεται το φύλο (αγόρι ή κορίτσι). Όρισέ το στα «Στοιχεία ενεργού μωρού» στις Ρυθμίσεις και πάτα «Πίσω»." to
-        "Sex (boy or girl) is required for WHO curves. Set it under \"Active baby details\" in Settings, then tap Back.",
-    "Οι bundled καμπύλες WHO σε αυτή την οθόνη καλύπτουν μόνο την ηλικία 0–5 ετών (0–60 μήνες)." to
-        "The bundled WHO curves on this screen cover ages 0–5 years (0–60 months) only.",
+    // ---- Growth reference (Growth screen) ----
+    "Καμπύλες ανάπτυξης" to "Growth curves",
+    "Καμπύλες αναφοράς βάρους και ύψους ανά ηλικία και φύλο, από τον Παγκόσμιο Οργανισμό Υγείας (ΠΟΥ). Ενημερωτικό βοήθημα — δεν χρησιμοποιεί τα δικά σου δεδομένα." to
+        "Reference curves for weight and height by age and sex, from the World Health Organization (WHO). Informational aid — it does not use your own data.",
     "Δεν φορτώθηκαν τα δεδομένα WHO. Δοκίμασε ξανά αργότερα." to
         "Could not load WHO data. Try again later.",
-    "Οι γραμμές δείχνουν το κάτω, μέσο και πάνω σημείο αναφοράς WHO. Τα σημεία είναι οι δικές σου καταγραφές βάρους/ύψους." to
-        "The lines show the lower, middle, and upper WHO reference points. The points are your logged weight/height entries.",
-    "Κάποιες καταγραφές δεν εμφανίζονται: μόνο μετρήσεις από τη γέννηση έως 60 μηνών ηλικίας." to
-        "Some entries are hidden: only measurements from birth through 60 months of age are shown.",
     "Βάρος για την ηλικία" to "Weight for age",
     "Μήκος/ύψος για την ηλικία" to "Length/height for age",
-    "Δεν υπάρχουν καταγραφές βάρους ακόμα." to "No weight entries yet.",
-    "Δεν υπάρχουν καταγραφές ύψους ακόμα." to "No height entries yet.",
     "Κάτω γραμμή αναφοράς WHO" to "Lower WHO reference line",
     "Μέση γραμμή αναφοράς WHO" to "Middle WHO reference line",
     "Πάνω γραμμή αναφοράς WHO" to "Upper WHO reference line",
-    "Οι καταγραφές σου" to "Your entries",
     "Ηλικία (μήνες)" to "Age (months)",
+    "Βάρος & ύψος" to "Weight & height",
     "Οι καμπύλες είναι σημείο αναφοράς του WHO και όχι ιατρική διάγνωση. Συζήτησε ανησυχίες με παιδίατρο." to
         "These curves are WHO reference points, not a medical diagnosis. Discuss any concerns with your pediatrician.",
     "Πηγή δεδομένων: WHO Child Growth Standards, 2006. Χωρίς έγκριση ή σύνδεση με τον WHO." to

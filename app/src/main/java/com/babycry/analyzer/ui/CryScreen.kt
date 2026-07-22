@@ -95,6 +95,7 @@ fun HomeScreen(
     onSafety: () -> Unit,
     onTummyGuide: () -> Unit,
     onOpenStats: () -> Unit,
+    onBackup: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.home.collectAsState()
@@ -106,6 +107,7 @@ fun HomeScreen(
     val sleep by viewModel.sleep.collectAsState()
     val tummy by viewModel.recentTummy.collectAsState()
     val careInsights by viewModel.careInsights.collectAsState()
+    val backupOverdue by viewModel.backupOverdue.collectAsState()
     var showDiaper by remember { mutableStateOf(false) }
     var showWeightAdd by remember { mutableStateOf(false) }
     var showHeightAdd by remember { mutableStateOf(false) }
@@ -141,6 +143,11 @@ fun HomeScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
+        }
+
+        if (backupOverdue) {
+            Spacer(Modifier.height(16.dp))
+            BackupReminderCard(onBackup = onBackup)
         }
 
         // Mini-player: soothing sound keeps playing across screens, so surface a stop control
@@ -342,6 +349,38 @@ fun HomeScreen(
             },
             onDelete = null,
         )
+    }
+}
+
+@Composable
+private fun BackupReminderCard(onBackup: () -> Unit) {
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+        ),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                "💾 " + tr("Κράτα ασφαλή τα δεδομένα σου"),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                tr("Δεν έχεις κρατήσει πρόσφατο backup. Κάνε ένα τώρα ώστε να μη χαθεί το ιστορικό του μωρού αν αλλάξεις ή χάσεις το κινητό."),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = onBackup,
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Text(tr("Δημιουργία backup"))
+            }
+        }
     }
 }
 
