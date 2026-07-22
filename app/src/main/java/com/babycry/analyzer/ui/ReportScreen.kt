@@ -213,9 +213,11 @@ private fun renderWebViewToPdf(context: Context, web: WebView): File {
         var top = 0
         var pageNumber = 1
         while (top < totalHeight) {
-            val pageInfo = PdfDocument.PageInfo
-                .Builder(PDF_PAGE_WIDTH, PDF_PAGE_HEIGHT, pageNumber)
-                .build()
+            val pageInfo = PdfDocument.PageInfo.Builder(
+                PDF_PAGE_WIDTH,
+                PDF_PAGE_HEIGHT,
+                pageNumber,
+            ).build()
             val page = document.startPage(pageInfo)
             val canvas = page.canvas
             canvas.save()
