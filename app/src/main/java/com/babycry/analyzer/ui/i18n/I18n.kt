@@ -609,6 +609,12 @@ private val EN: Map<String, String> = mapOf(
     "Μέση γραμμή αναφοράς WHO" to "Middle WHO reference line",
     "Πάνω γραμμή αναφοράς WHO" to "Upper WHO reference line",
     "Ηλικία (μήνες)" to "Age (months)",
+    "Ηλικία (μήνες) · κάνε pinch ή +/− για μεγέθυνση" to
+        "Age (months) · pinch or use +/− to zoom",
+    "μήνες" to "months",
+    "Μεγέθυνση" to "Zoom in",
+    "Σμίκρυνση" to "Zoom out",
+    "Επαναφορά" to "Reset",
     "Βάρος & ύψος" to "Weight & height",
     "Οι καμπύλες είναι σημείο αναφοράς του WHO και όχι ιατρική διάγνωση. Συζήτησε ανησυχίες με παιδίατρο." to
         "These curves are WHO reference points, not a medical diagnosis. Discuss any concerns with your pediatrician.",

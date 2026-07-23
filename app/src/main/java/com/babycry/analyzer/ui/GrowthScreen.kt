@@ -1,6 +1,8 @@
 package com.babycry.analyzer.ui
 
+import android.graphics.Paint
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,14 +18,21 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -34,8 +43,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.babycry.analyzer.growth.WhoGrowthCurves
 import com.babycry.analyzer.growth.WhoGrowthCurvesLoader
 import com.babycry.analyzer.growth.WhoGrowthPoint
@@ -46,6 +60,10 @@ import com.babycry.analyzer.ui.i18n.tr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.log10
+import kotlin.math.pow
 
 /**
  * An informational reference screen (like Tummy Time): it shows the WHO 0–5 year weight- and
@@ -221,6 +239,8 @@ private fun LegendDot(label: String, color: Color) {
     }
 }
 
+private const val MIN_WINDOW_MONTHS = 3f
+
 @Composable
 private fun WhoReferenceChart(
     reference: List<WhoGrowthPoint>,
@@ -228,107 +248,225 @@ private fun WhoReferenceChart(
     yUnitLabel: String,
     formatY: (Float) -> String,
 ) {
-    val labelStyle = MaterialTheme.typography.labelSmall
-    val labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+    val labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
     val outline = MaterialTheme.colorScheme.outline
-    val grid = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    val grid = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
 
     val refLower = reference.map { valueFromPoint(it.lower) }
     val refMed = reference.map { valueFromPoint(it.median) }
     val refUpper = reference.map { valueFromPoint(it.upper) }
-    // Scale strictly to the reference band so the curves fill the plot (no empty headroom).
-    val yMinRaw = refLower.minOrNull() ?: 0f
-    val yMaxRaw = refUpper.maxOrNull() ?: 1f
-    val pad = ((yMaxRaw - yMinRaw) * 0.05f).coerceAtLeast(0.01f)
-    val yMin = (yMinRaw - pad).coerceAtLeast(0f)
-    val yMax = yMaxRaw + pad
-    val yRange = (yMax - yMin).coerceAtLeast(0.1f)
-    val yMid = (yMin + yMax) / 2f
+    val lastMonth = (reference.size - 1).coerceAtLeast(1).toFloat()
+
+    // Visible age window in months; pinch/buttons change it. Reset when the dataset changes.
+    var viewStart by remember(reference) { mutableFloatStateOf(0f) }
+    var viewEnd by remember(reference) { mutableFloatStateOf(lastMonth) }
+
+    fun clampWindow(start: Float, end: Float) {
+        var s = start
+        var e = end
+        val win = (e - s).coerceIn(MIN_WINDOW_MONTHS, lastMonth)
+        e = s + win
+        if (s < 0f) { e -= s; s = 0f }
+        if (e > lastMonth) { s -= (e - lastMonth); e = lastMonth }
+        viewStart = s.coerceIn(0f, lastMonth)
+        viewEnd = e.coerceIn(0f, lastMonth)
+    }
+
+    fun zoomAroundCenter(factor: Float) {
+        val center = (viewStart + viewEnd) / 2f
+        val newWin = ((viewEnd - viewStart) * factor).coerceIn(MIN_WINDOW_MONTHS, lastMonth)
+        clampWindow(center - newWin / 2f, center + newWin / 2f)
+    }
+
+    // Auto-fit the vertical scale to the reference band *within the visible age window*, so
+    // zooming into early months reveals fine detail (and gives the y-axis meaningful numbers).
+    val loI = floor(viewStart).toInt().coerceIn(0, reference.size - 1)
+    val hiI = ceil(viewEnd).toInt().coerceIn(0, reference.size - 1)
+    val yMinRaw = (loI..hiI).minOf { refLower[it] }
+    val yMaxRaw = (loI..hiI).maxOf { refUpper[it] }
+    val yPad = ((yMaxRaw - yMinRaw) * 0.08f).coerceAtLeast(0.01f)
+    val yMin = (yMinRaw - yPad).coerceAtLeast(0f)
+    val yMax = yMaxRaw + yPad
+
+    val yTicks = niceTicks(yMin, yMax, 6)
+    val xTicks = monthTicks(viewStart, viewEnd)
+
+    val labelPaint = remember {
+        Paint().apply { isAntiAlias = true }
+    }
 
     Column {
-        Box(Modifier.fillMaxWidth().height(220.dp)) {
+        // Zoom controls; also usable by anyone who can't comfortably pinch.
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                "${formatY(yMax)} $yUnitLabel",
-                style = labelStyle,
+                "${floor(viewStart).toInt()}–${ceil(viewEnd).toInt()} " + tr("μήνες"),
+                style = MaterialTheme.typography.labelMedium,
                 color = labelColor,
-                maxLines = 1,
-                modifier = Modifier.align(Alignment.TopStart).padding(top = 10.dp),
+                modifier = Modifier.weight(1f),
             )
-            Text(
-                formatY(yMid),
-                style = labelStyle,
-                color = labelColor,
-                maxLines = 1,
-                modifier = Modifier.align(Alignment.CenterStart),
-            )
-            Text(
-                "${formatY(yMin)} $yUnitLabel",
-                style = labelStyle,
-                color = labelColor,
-                maxLines = 1,
-                modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 18.dp),
-            )
+            IconButton(onClick = { zoomAroundCenter(1.6f) }) {
+                Icon(Icons.Filled.Remove, contentDescription = tr("Σμίκρυνση"))
+            }
+            IconButton(onClick = { zoomAroundCenter(0.6f) }) {
+                Icon(Icons.Filled.Add, contentDescription = tr("Μεγέθυνση"))
+            }
+            IconButton(onClick = { clampWindow(0f, lastMonth) }) {
+                Icon(Icons.Filled.Refresh, contentDescription = tr("Επαναφορά"))
+            }
+        }
+
+        val leftInset = 46.dp
+        val bottomInset = 22.dp
+        val topInset = 10.dp
+        val rightInset = 10.dp
+
+        Box(Modifier.fillMaxWidth().height(240.dp)) {
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(start = 48.dp, top = 12.dp, bottom = 20.dp, end = 8.dp),
+                    .pointerInput(reference) {
+                        detectTransformGestures { centroid, pan, zoom, _ ->
+                            val plotLeft = leftInset.toPx()
+                            val plotW = (size.width - plotLeft - rightInset.toPx()).coerceAtLeast(1f)
+                            val win = viewEnd - viewStart
+                            val focalFrac = ((centroid.x - plotLeft) / plotW).coerceIn(0f, 1f)
+                            val focalMonth = viewStart + focalFrac * win
+                            val newWin = (win / zoom).coerceIn(MIN_WINDOW_MONTHS, lastMonth)
+                            val panMonths = -(pan.x / plotW) * newWin
+                            val newStart = focalMonth - focalFrac * newWin + panMonths
+                            clampWindow(newStart, newStart + newWin)
+                        }
+                    },
             ) {
-                val w = size.width
-                val h = size.height
-                fun xFor(month: Float): Float = (month / 60f) * w
-                fun yFor(v: Float): Float = h - ((v - yMin) / yRange) * h
+                val plotLeft = leftInset.toPx()
+                val plotTop = topInset.toPx()
+                val plotRight = size.width - rightInset.toPx()
+                val plotBottom = size.height - bottomInset.toPx()
+                val plotW = (plotRight - plotLeft).coerceAtLeast(1f)
+                val plotH = (plotBottom - plotTop).coerceAtLeast(1f)
+                val win = (viewEnd - viewStart).coerceAtLeast(0.01f)
+                val yRange = (yMax - yMin).coerceAtLeast(0.01f)
 
-                // Light vertical guides every 12 months so ages are easy to read across.
-                listOf(0, 12, 24, 36, 48, 60).forEach { m ->
-                    val x = xFor(m.toFloat())
-                    drawLine(
-                        color = grid,
-                        start = Offset(x, 0f),
-                        end = Offset(x, h),
-                        strokeWidth = 1.dp.toPx(),
+                fun xFor(month: Float): Float = plotLeft + ((month - viewStart) / win) * plotW
+                fun yFor(v: Float): Float = plotBottom - ((v - yMin) / yRange) * plotH
+
+                labelPaint.color = labelColor.toArgb()
+                labelPaint.textSize = 11.sp.toPx()
+
+                // Horizontal grid + y-axis value labels.
+                labelPaint.textAlign = Paint.Align.RIGHT
+                val fm = labelPaint.fontMetrics
+                yTicks.forEach { v ->
+                    val y = yFor(v)
+                    drawLine(grid, Offset(plotLeft, y), Offset(plotRight, y), 1.dp.toPx())
+                    drawContext.canvas.nativeCanvas.drawText(
+                        formatY(v),
+                        plotLeft - 4.dp.toPx(),
+                        y - (fm.ascent + fm.descent) / 2f,
+                        labelPaint,
                     )
                 }
-                // Horizontal mid guide.
-                drawLine(
-                    color = grid,
-                    start = Offset(0f, h / 2f),
-                    end = Offset(w, h / 2f),
-                    strokeWidth = 1.dp.toPx(),
+
+                // Vertical grid + x-axis (age) labels.
+                labelPaint.textAlign = Paint.Align.CENTER
+                xTicks.forEach { m ->
+                    val x = xFor(m)
+                    drawLine(grid, Offset(x, plotTop), Offset(x, plotBottom), 1.dp.toPx())
+                    drawContext.canvas.nativeCanvas.drawText(
+                        "${m.toInt()}",
+                        x,
+                        plotBottom + 15.dp.toPx(),
+                        labelPaint,
+                    )
+                }
+
+                // Unit caption at the top-left of the plot.
+                labelPaint.textAlign = Paint.Align.LEFT
+                drawContext.canvas.nativeCanvas.drawText(
+                    yUnitLabel,
+                    plotLeft + 2.dp.toPx(),
+                    plotTop + 10.dp.toPx(),
+                    labelPaint,
                 )
 
                 fun drawCurve(values: List<Float>, color: Color, stroke: Float) {
-                    if (values.isEmpty()) return
                     val path = Path()
+                    var started = false
                     values.forEachIndexed { idx, v ->
                         val x = xFor(idx.toFloat())
                         val y = yFor(v)
-                        if (idx == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                        if (!started) { path.moveTo(x, y); started = true } else path.lineTo(x, y)
                     }
                     drawPath(path, color, style = Stroke(width = stroke))
                 }
 
-                drawCurve(refLower, outline.copy(alpha = 0.45f), 1.5.dp.toPx())
-                drawCurve(refMed, outline.copy(alpha = 0.85f), 2.5.dp.toPx())
-                drawCurve(refUpper, outline.copy(alpha = 0.45f), 1.5.dp.toPx())
-            }
-        }
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = 48.dp, end = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            listOf(0, 12, 24, 36, 48, 60).forEach { m ->
-                Text("$m", style = labelStyle, color = labelColor)
+                clipRect(plotLeft, plotTop, plotRight, plotBottom) {
+                    drawCurve(refLower, outline.copy(alpha = 0.5f), 1.5.dp.toPx())
+                    drawCurve(refMed, outline.copy(alpha = 0.9f), 2.5.dp.toPx())
+                    drawCurve(refUpper, outline.copy(alpha = 0.5f), 1.5.dp.toPx())
+                }
             }
         }
         Text(
-            tr("Ηλικία (μήνες)"),
-            style = labelStyle,
+            tr("Ηλικία (μήνες) · κάνε pinch ή +/− για μεγέθυνση"),
+            style = MaterialTheme.typography.labelSmall,
             color = labelColor,
-            modifier = Modifier.padding(start = 48.dp, top = 2.dp),
+            modifier = Modifier.padding(start = 46.dp, top = 2.dp),
         )
     }
+}
+
+/** Evenly spaced "nice" tick values (1/2/5 × 10ⁿ) covering [min, max]. */
+private fun niceTicks(min: Float, max: Float, target: Int): List<Float> {
+    if (max <= min || target < 2) return listOf(min, max)
+    val step = niceNum((max - min) / (target - 1), round = true)
+    val start = ceil(min / step) * step
+    val ticks = ArrayList<Float>()
+    var v = start
+    while (v <= max + step * 0.001f) {
+        ticks.add(v)
+        v += step
+    }
+    return if (ticks.size >= 2) ticks else listOf(min, max)
+}
+
+private fun niceNum(range: Float, round: Boolean): Float {
+    val exp = floor(log10(range.toDouble())).toInt()
+    val frac = range / 10.0.pow(exp).toFloat()
+    val niceFrac = if (round) {
+        when {
+            frac < 1.5f -> 1f
+            frac < 3f -> 2f
+            frac < 7f -> 5f
+            else -> 10f
+        }
+    } else {
+        when {
+            frac <= 1f -> 1f
+            frac <= 2f -> 2f
+            frac <= 5f -> 5f
+            else -> 10f
+        }
+    }
+    return niceFrac * 10.0.pow(exp).toFloat()
+}
+
+/** Whole-month tick marks for the visible window, aiming for ~6 evenly spaced labels. */
+private fun monthTicks(start: Float, end: Float): List<Float> {
+    val win = (end - start).coerceAtLeast(1f)
+    val step = listOf(1f, 2f, 3f, 6f, 12f).firstOrNull { it >= win / 6f } ?: 12f
+    val first = ceil(start / step) * step
+    val ticks = ArrayList<Float>()
+    var m = first
+    while (m <= end + 0.001f) {
+        ticks.add(m)
+        m += step
+    }
+    return if (ticks.isEmpty()) listOf(ceil(start), floor(end)) else ticks
 }
 
 private fun formatKg(v: Float): String {
