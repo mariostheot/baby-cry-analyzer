@@ -174,10 +174,10 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                 DayNavigationBar(
                     selectedDayStart = activeDayStart,
                     todayStart = todayStart,
-                    onPrevious = { selectedDayStart = startOfDay(activeDayStart - 86_400_000L) },
+                    onPrevious = { selectedDayStart = previousDayStart(activeDayStart) },
                     onNext = {
                         if (activeDayStart < todayStart) {
-                            selectedDayStart = minOf(startOfDay(activeDayStart + 86_400_000L), todayStart)
+                            selectedDayStart = minOf(nextDayStart(activeDayStart), todayStart)
                         }
                     },
                     onToday = { selectedDayStart = todayStart },
@@ -1412,9 +1412,8 @@ private fun computeDaySummary(
     profile: BabyProfile,
     dayStart: Long,
 ): DaySummary {
-    val dayMs = 86_400_000L
-    val dayEnd = dayStart + dayMs
-    val prevStart = dayStart - dayMs
+    val dayEnd = nextDayStart(dayStart)
+    val prevStart = previousDayStart(dayStart)
     fun inDay(ts: Long) = ts in dayStart until dayEnd
 
     val completedFeedings = feedings.filter { it.durationMs >= 0L }
@@ -1483,7 +1482,7 @@ private fun buildDayTimeline(
     tummy: List<TummyTimeEvent>,
     dayStart: Long,
 ): List<Line> {
-    val dayEnd = dayStart + 86_400_000L
+    val dayEnd = nextDayStart(dayStart)
     fun inDay(ts: Long) = ts in dayStart until dayEnd
 
     val entries = ArrayList<Pair<Long, Line>>()
@@ -1499,7 +1498,7 @@ private fun buildDayTimeline(
 
 private fun dayLabel(dayStart: Long, todayStart: Long): String = when (dayStart) {
     todayStart -> translate(currentAppLang, "Σήμερα")
-    todayStart - 86_400_000L -> translate(currentAppLang, "Χθες")
+    previousDayStart(todayStart) -> translate(currentAppLang, "Χθες")
     else -> dayHeaderFormat().format(Date(dayStart)).replaceFirstChar { it.uppercase() }
 }
 
@@ -1511,6 +1510,20 @@ private fun startOfDay(ts: Long): Long {
         set(Calendar.SECOND, 0)
         set(Calendar.MILLISECOND, 0)
     }
+    return c.timeInMillis
+}
+
+/** Calendar-safe previous local midnight (handles DST 23h/25h days). */
+private fun previousDayStart(dayStart: Long): Long {
+    val c = Calendar.getInstance().apply { timeInMillis = dayStart }
+    c.add(Calendar.DATE, -1)
+    return c.timeInMillis
+}
+
+/** Calendar-safe next local midnight (handles DST 23h/25h days). */
+private fun nextDayStart(dayStart: Long): Long {
+    val c = Calendar.getInstance().apply { timeInMillis = dayStart }
+    c.add(Calendar.DATE, 1)
     return c.timeInMillis
 }
 

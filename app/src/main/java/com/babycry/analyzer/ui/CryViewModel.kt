@@ -776,6 +776,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectBaby(id: String) {
         viewModelScope.launch {
+            clearHomeForProfileSwitch()
             _pending.value = null
             repo.setActiveProfile(id)
             refreshProfiles()
@@ -785,6 +786,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openPendingForBaby(id: String?, eventId: Long?) {
         viewModelScope.launch {
+            clearHomeForProfileSwitch()
             _pending.value = null
             if (!id.isNullOrBlank() && repo.hasProfile(id)) {
                 repo.setActiveProfile(id)
@@ -797,6 +799,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteBaby(id: String) {
         viewModelScope.launch {
+            clearHomeForProfileSwitch()
             _pending.value = null
             ConfirmReminder.cancelAllForProfile(getApplication<Application>(), id, repo.pendingEventIds(id))
             FeedReminder.cancel(getApplication<Application>(), id)
@@ -807,13 +810,32 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun saveProfile(name: String, birthMillis: Long?, gender: BabyGender) {
+    /**
+     * Drop any on-screen analysis/recording tied to the previous baby so the Home header and
+     * result card cannot disagree after a profile switch (and feedback cannot hit the wrong event).
+     */
+    private fun clearHomeForProfileSwitch() {
+        if (_home.value.phase == Phase.RECORDING) {
+            cancelRequested = true
+            recorder.stop()
+        }
+        lastWaveform = null
+        _home.value = HomeUiState(phase = Phase.IDLE)
+    }
+
+    fun saveProfile(
+        name: String,
+        birthMillis: Long?,
+        gender: BabyGender,
+        onDone: (() -> Unit)? = null,
+    ) {
         viewModelScope.launch {
             repo.updateActiveProfile(name.trim(), birthMillis, gender)
             refreshProfiles()
             scheduleFeedReminder()
             scheduleTummyReminder()
             _home.update { it.copy(message = trS("Το προφίλ αποθηκεύτηκε.")) }
+            onDone?.invoke()
         }
     }
 

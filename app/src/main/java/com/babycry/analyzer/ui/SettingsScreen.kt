@@ -355,8 +355,14 @@ fun SettingsScreen(
                     Icons.Filled.Description,
                     tr("Προβολή / Εξαγωγή αναφοράς"),
                     tr("Ανοίγει μια όμορφη αναφορά· από εκεί την αποθηκεύεις ή τη μοιράζεσαι ως PDF"),
-                    onExportReport,
-                )
+                ) {
+                    // Persist draft name/birth/gender first so the report matches what the parent sees.
+                    focus.clearFocus()
+                    viewModel.saveProfile(name, birth, gender) {
+                        justSaved = true
+                        onExportReport()
+                    }
+                }
                 Divider(Modifier.padding(vertical = 4.dp))
                 ActionRow(
                     Icons.Filled.Backup,
