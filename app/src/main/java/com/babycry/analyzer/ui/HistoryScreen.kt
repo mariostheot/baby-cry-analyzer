@@ -101,11 +101,14 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     var editHeight by remember { mutableStateOf<HeightEvent?>(null) }
     var pendingDelete by remember { mutableStateOf<CryEvent?>(null) }
     var timelineFilter by remember { mutableStateOf(HistoryFilter.ALL) }
+    var selectedDayStart by remember { mutableLongStateOf(Long.MIN_VALUE) }
 
     // A measurement belongs to one baby. Do not leave an edit dialog open across a switch.
+    // Also reset the selected day so Baby B does not inherit Baby A's day (often empty).
     LaunchedEffect(profile.id) {
         editWeight = null
         editHeight = null
+        selectedDayStart = Long.MIN_VALUE
     }
 
     val now = System.currentTimeMillis()
@@ -120,8 +123,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val defaultDay = remember(loggedDays, todayStart) {
         if (loggedDays.contains(todayStart)) todayStart else loggedDays.maxOrNull() ?: todayStart
     }
-    var selectedDayStart by remember { mutableLongStateOf(Long.MIN_VALUE) }
-    LaunchedEffect(defaultDay) {
+    LaunchedEffect(profile.id, defaultDay) {
         if (selectedDayStart == Long.MIN_VALUE) {
             selectedDayStart = defaultDay
         }

@@ -86,6 +86,8 @@ private val EN: Map<String, String> = mapOf(
     "Προσθήκη βάρους" to "Add weight",
     "Καταγράφηκε το βάρος." to "Weight logged.",
     "Προαιρετικό — βάρος γέννησης σε κιλά (π.χ. 3,4)." to "Optional — birth weight in kg (e.g. 3.4).",
+    "Για να αποθηκευτεί το βάρος/ύψος γέννησης χρειάζεται η ημερομηνία γέννησης." to
+        "To save birth weight/height, the date of birth is required.",
     "Δεν έχει καταγραφεί βάρος ακόμη. Πρόσθεσέ το από την Αρχική μετά από επίσκεψη στον παιδίατρο." to
         "No weight recorded yet. Add it from Home after a pediatrician visit.",
     "Τρέχον" to "Current",

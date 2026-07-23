@@ -62,9 +62,12 @@ fun OnboardingScreen(
     var gender by remember { mutableStateOf(BabyGender.UNKNOWN) }
     var colic by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
+    // Birth weight/height are logged with the birth date; without it they would be discarded.
+    var showBirthRequiredHint by remember { mutableStateOf(false) }
     val dateFmt = remember(currentAppLang) {
         SimpleDateFormat("dd/MM/yyyy", if (currentAppLang == AppLang.EN) Locale.ENGLISH else Locale("el"))
     }
+    val wantsBirthMeasurement = weightKg.isNotBlank() || heightCm.isNotBlank()
 
     // Onboarding is shown BEFORE the Scaffold, so nothing else paints a background here. The
     // platform window is hardcoded white, so without this Surface the theme's near-white
@@ -135,6 +138,15 @@ fun OnboardingScreen(
                 )
             }
             OutlinedButton(onClick = { showPicker = true }) { Text(tr("Επιλογή")) }
+        }
+        if (showBirthRequiredHint && birth == null && wantsBirthMeasurement) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                tr("Για να αποθηκευτεί το βάρος/ύψος γέννησης χρειάζεται η ημερομηνία γέννησης."),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
 
         Spacer(Modifier.height(16.dp))
@@ -218,6 +230,11 @@ fun OnboardingScreen(
         Spacer(Modifier.height(32.dp))
         Button(
             onClick = {
+                if (wantsBirthMeasurement && birth == null) {
+                    showBirthRequiredHint = true
+                    return@Button
+                }
+                showBirthRequiredHint = false
                 val parsedKg = weightKg.trim()
                     .replace(',', '.')
                     .toDoubleOrNull()
@@ -247,6 +264,7 @@ fun OnboardingScreen(
             initialDateMillis = birth,
             onDismiss = { showPicker = false },
             onConfirm = {
+                showBirthRequiredHint = false
                 birth = it
                 showPicker = false
             },

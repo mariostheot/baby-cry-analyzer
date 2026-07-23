@@ -201,14 +201,21 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CareInsightsUiState())
 
     // True once there is anything worth backing up on this device.
+    // kotlinx-coroutines only offers typed combine() up to 5 flows, so nest the last two.
     private val hasTrackedData: kotlinx.coroutines.flow.Flow<Boolean> = combine(
-        recentEvents,
-        recentFeedings,
-        recentDiapers,
-        recentSleep,
-        recentTummy,
-    ) { e, f, d, s, t ->
-        e.isNotEmpty() || f.isNotEmpty() || d.isNotEmpty() || s.isNotEmpty() || t.isNotEmpty()
+        combine(
+            recentEvents,
+            recentFeedings,
+            recentDiapers,
+            recentSleep,
+            recentTummy,
+        ) { e, f, d, s, t ->
+            e.isNotEmpty() || f.isNotEmpty() || d.isNotEmpty() || s.isNotEmpty() || t.isNotEmpty()
+        },
+        recentWeights,
+        recentHeights,
+    ) { base, weights, heights ->
+        base || weights.isNotEmpty() || heights.isNotEmpty()
     }
 
     /**
