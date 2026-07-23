@@ -1446,7 +1446,7 @@ private fun computeDaySummary(
             inDay(it.timestamp) && DiaperType.fromNameOrNull(it.type)?.hasStool == true
         },
         tummy = tummy.count { inDay(it.timestamp) },
-        tummyGoal = TummyTime.dailyGoal(profile.ageDays(dayStart + dayMs / 2)),
+        tummyGoal = TummyTime.dailyGoal(profile.ageDays(dayStart + (dayEnd - dayStart) / 2)),
         topReason = topReason,
         criesYesterdayComparison = criesComparisonText,
     )
