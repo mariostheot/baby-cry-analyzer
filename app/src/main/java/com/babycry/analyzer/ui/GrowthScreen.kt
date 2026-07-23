@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -174,6 +176,7 @@ private fun DisclaimerCard() {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GrowthChartCard(
     title: String,
@@ -186,7 +189,12 @@ private fun GrowthChartCard(
         Column(Modifier.padding(12.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(4.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            // FlowRow so the (long, translated) legend labels wrap onto new lines instead of being
+            // squeezed to zero width — which previously forced the whole legend to grow very tall.
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 LegendDot(tr("Κάτω γραμμή αναφοράς WHO"), MaterialTheme.colorScheme.outline)
                 LegendDot(tr("Μέση γραμμή αναφοράς WHO"), MaterialTheme.colorScheme.outline.copy(alpha = 0.85f))
                 LegendDot(tr("Πάνω γραμμή αναφοράς WHO"), MaterialTheme.colorScheme.outline.copy(alpha = 0.65f))
@@ -209,7 +217,7 @@ private fun LegendDot(label: String, color: Color) {
             drawCircle(color = color, radius = 4.dp.toPx(), center = Offset(size.width / 2, size.height / 2))
         }
         Spacer(Modifier.width(4.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall)
+        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
     }
 }
 
@@ -243,19 +251,22 @@ private fun WhoReferenceChart(
                 "${formatY(yMax)} $yUnitLabel",
                 style = labelStyle,
                 color = labelColor,
-                modifier = Modifier.align(Alignment.TopStart),
+                maxLines = 1,
+                modifier = Modifier.align(Alignment.TopStart).padding(top = 10.dp),
             )
             Text(
                 formatY(yMid),
                 style = labelStyle,
                 color = labelColor,
+                maxLines = 1,
                 modifier = Modifier.align(Alignment.CenterStart),
             )
             Text(
                 "${formatY(yMin)} $yUnitLabel",
                 style = labelStyle,
                 color = labelColor,
-                modifier = Modifier.align(Alignment.BottomStart),
+                maxLines = 1,
+                modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 18.dp),
             )
             Canvas(
                 modifier = Modifier
