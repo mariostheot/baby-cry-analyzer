@@ -36,6 +36,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -278,6 +279,13 @@ private fun WhoReferenceChart(
         clampWindow(center - newWin / 2f, center + newWin / 2f)
     }
 
+    // pointerInput captures composition values; keep a live view of the zoom window so pinch/pan
+    // after the first gesture still uses the current range (not the initial 0…60 months).
+    val viewStartLatest = rememberUpdatedState(viewStart)
+    val viewEndLatest = rememberUpdatedState(viewEnd)
+    val lastMonthLatest = rememberUpdatedState(lastMonth)
+    val clampWindowLatest = rememberUpdatedState<(Float, Float) -> Unit> { s, e -> clampWindow(s, e) }
+
     // Auto-fit the vertical scale to the reference band *within the visible age window*, so
     // zooming into early months reveals fine detail (and gives the y-axis meaningful numbers).
     val loI = floor(viewStart).toInt().coerceIn(0, reference.size - 1)
@@ -332,13 +340,16 @@ private fun WhoReferenceChart(
                         detectTransformGestures { centroid, pan, zoom, _ ->
                             val plotLeft = leftInset.toPx()
                             val plotW = (size.width - plotLeft - rightInset.toPx()).coerceAtLeast(1f)
-                            val win = viewEnd - viewStart
+                            val start = viewStartLatest.value
+                            val end = viewEndLatest.value
+                            val maxMonth = lastMonthLatest.value
+                            val win = end - start
                             val focalFrac = ((centroid.x - plotLeft) / plotW).coerceIn(0f, 1f)
-                            val focalMonth = viewStart + focalFrac * win
-                            val newWin = (win / zoom).coerceIn(MIN_WINDOW_MONTHS, lastMonth)
+                            val focalMonth = start + focalFrac * win
+                            val newWin = (win / zoom).coerceIn(MIN_WINDOW_MONTHS, maxMonth)
                             val panMonths = -(pan.x / plotW) * newWin
                             val newStart = focalMonth - focalFrac * newWin + panMonths
-                            clampWindow(newStart, newStart + newWin)
+                            clampWindowLatest.value(newStart, newStart + newWin)
                         }
                     },
             ) {

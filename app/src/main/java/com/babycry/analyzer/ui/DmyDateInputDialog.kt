@@ -25,6 +25,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import com.babycry.analyzer.ui.i18n.tr
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
@@ -32,6 +33,10 @@ import java.util.TimeZone
 /**
  * Manual birth-date input with a device-independent day-first format. Digits are auto-slashed
  * (so the numeric keyboard needs no "/" key) and a calendar button opens a tap-to-pick grid.
+ *
+ * Storage uses local-midnight millis of the chosen calendar day. The Material DatePicker speaks
+ * UTC midnight, so we convert at the picker boundary — otherwise confirming without changing the
+ * selection can shift the date by one day east of UTC (e.g. Greece).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,8 +46,16 @@ fun DmyDateInputDialog(
     onConfirm: (Long) -> Unit,
     title: String? = null,
 ) {
+    // Local-timezone formatter: typed text and saved millis stay on the device's calendar day.
     val formatter = remember {
         SimpleDateFormat("dd/MM/yyyy", Locale.UK).apply { isLenient = false }
+    }
+    // UTC formatter: Material DatePicker reports UTC midnight for the selected civil day.
+    val utcFormatter = remember {
+        SimpleDateFormat("dd/MM/yyyy", Locale.UK).apply {
+            isLenient = false
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
     }
     var fieldValue by remember(initialDateMillis) {
         val initialText = initialDateMillis?.let { formatter.format(Date(it)) } ?: ""
@@ -101,25 +114,26 @@ fun DmyDateInputDialog(
     )
 
     if (showCalendar) {
-        val today = System.currentTimeMillis()
+        val todayUtcMidnight = remember { localCalendarDayToUtcMidnight(System.currentTimeMillis()) }
+        val pickerInitial = remember(selectedMillis, initialDateMillis) {
+            val local = selectedMillis ?: initialDateMillis
+            local?.let { localCalendarDayToUtcMidnight(it) }
+        }
         val pickerState = rememberDatePickerState(
-            initialSelectedDateMillis = selectedMillis ?: initialDateMillis,
+            initialSelectedDateMillis = pickerInitial,
             selectableDates = object : SelectableDates {
-                override fun isSelectableDate(utcTimeMillis: Long): Boolean = utcTimeMillis <= today
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                    utcTimeMillis <= todayUtcMidnight
             },
         )
-        // The picker reports UTC midnight; format in UTC so the day never shifts.
-        val utcFormatter = remember {
-            SimpleDateFormat("dd/MM/yyyy", Locale.UK).apply {
-                timeZone = TimeZone.getTimeZone("UTC")
-            }
-        }
         DatePickerDialog(
             onDismissRequest = { showCalendar = false },
             confirmButton = {
                 TextButton(onClick = {
-                    pickerState.selectedDateMillis?.let { millis ->
-                        val formatted = utcFormatter.format(Date(millis))
+                    pickerState.selectedDateMillis?.let { utcMillis ->
+                        // Format the picker's UTC midnight as a civil day, then re-parse with the
+                        // local formatter so storage stays local-midnight of that same day.
+                        val formatted = utcFormatter.format(Date(utcMillis))
                         fieldValue = TextFieldValue(formatted, selection = TextRange(formatted.length))
                     }
                     showCalendar = false
@@ -150,4 +164,20 @@ private fun parseDmyDate(input: String, formatter: SimpleDateFormat): Long? {
     return runCatching {
         formatter.parse(input)?.takeIf { formatter.format(it) == input }?.time
     }.getOrNull()
+}
+
+/**
+ * Converts any instant to UTC midnight of the same local calendar day, which is what
+ * [androidx.compose.material3.DatePicker] expects for [initialSelectedDateMillis].
+ */
+private fun localCalendarDayToUtcMidnight(localMillis: Long): Long {
+    val local = Calendar.getInstance().apply { timeInMillis = localMillis }
+    return Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+        clear()
+        set(
+            local.get(Calendar.YEAR),
+            local.get(Calendar.MONTH),
+            local.get(Calendar.DAY_OF_MONTH),
+        )
+    }.timeInMillis
 }

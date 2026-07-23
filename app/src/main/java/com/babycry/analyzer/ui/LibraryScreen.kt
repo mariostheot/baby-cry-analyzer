@@ -54,12 +54,20 @@ import java.util.Locale
 @Composable
 fun LibraryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val labels = viewModel.labels
+    val profile by viewModel.profile.collectAsState()
     val recents by viewModel.recentEvents.collectAsState()
     val language by viewModel.language.collectAsState()
     val playback by viewModel.playback.collectAsState()
     var clips by remember { mutableStateOf<List<CryEvent>>(emptyList()) }
-    // Reload whenever events change (new confirmation, deletion) or the language flips.
-    LaunchedEffect(recents, language) { clips = viewModel.libraryEvents() }
+    var selectedDayStart by remember { mutableLongStateOf(Long.MIN_VALUE) }
+    // Drop Baby A's clips immediately when switching; do not wait for the suspend reload.
+    LaunchedEffect(profile.id) {
+        clips = emptyList()
+        selectedDayStart = Long.MIN_VALUE
+    }
+    LaunchedEffect(profile.id, recents, language) {
+        clips = viewModel.libraryEvents()
+    }
 
     val timeFmt = remember(language) {
         SimpleDateFormat("HH:mm", if (currentAppLang == AppLang.EN) Locale.ENGLISH else Locale("el"))
@@ -73,7 +81,6 @@ fun LibraryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val recordingDays = remember(clips) {
         clips.map { startOfDay(it.timestamp) }.distinct().sortedDescending()
     }
-    var selectedDayStart by remember { mutableLongStateOf(Long.MIN_VALUE) }
     LaunchedEffect(recordingDays) {
         if (selectedDayStart == Long.MIN_VALUE || recordingDays.none { it == selectedDayStart }) {
             selectedDayStart = recordingDays.firstOrNull() ?: Long.MIN_VALUE
