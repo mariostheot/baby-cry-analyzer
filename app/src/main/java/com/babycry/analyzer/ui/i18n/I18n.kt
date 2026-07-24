@@ -173,10 +173,18 @@ private val EN: Map<String, String> = mapOf(
         "No records yet. Tap \"Listen to baby\" or log a feeding or sleep.",
     "Δεν υπάρχουν ακόμα καταγραφές. Πρόσθεσε τάισμα, πάνα ή ύπνο παρακάτω, ή πάτα «Άκου το μωρό»." to
         "No records yet. Add a feeding, diaper, or sleep below, or tap \"Listen to baby\".",
+    "Δεν υπάρχουν ακόμα καταγραφές. Πρόσθεσε φροντίδα παρακάτω, ή πάτα «Άκου το μωρό»." to
+        "No records yet. Add care below, or tap \"Listen to baby\".",
     "Προσθήκη στην ημέρα" to "Add to this day",
     "Προσθήκη ταΐσματος" to "Add feeding",
     "Προσθήκη ύπνου" to "Add sleep",
     "Προσθήκη πάνας" to "Add diaper",
+    "Προσθήκη tummy time" to "Add tummy time",
+    "Βάλε την ώρα που έγινε, αν δεν το κατέγραψες τη στιγμή εκείνη." to
+        "Enter the time it happened if you didn't log it then.",
+    "Ώρα μέτρησης" to "Measurement time",
+    "π.μ." to "AM",
+    "μ.μ." to "PM",
     "Για όταν ξέχασες να πατήσεις έναρξη στην Αρχική. Βάλε ώρα έναρξης και λήξης." to
         "For when you forgot to tap start on Home. Enter start and end times.",
     "Η έναρξη πρέπει να είναι στην επιλεγμένη ημέρα." to "Start time must be on the selected day.",
@@ -260,6 +268,8 @@ private val EN: Map<String, String> = mapOf(
     "Ημέρα του μωρού" to "Baby's day",
     "Μια γρήγορη γραμμή με τα σημερινά κλάματα, ταΐσματα, πάνες και tummy time." to
         "A quick line with today's cries, feedings, diapers and tummy time.",
+    "Μια γρήγορη γραμμή με τα σημερινά κλάματα, ταΐσματα, ύπνους, πάνες και tummy time." to
+        "A quick line with today's cries, feedings, sleeps, diapers and tummy time.",
     "Κλάμα" to "Cry",
     "Δεν υπάρχουν ακόμη σημερινές καταγραφές." to "No records for today yet.",
     "Δείχνει τις τελευταίες σημερινές καταγραφές με σειρά ώρας." to
@@ -440,6 +450,8 @@ private val EN: Map<String, String> = mapOf(
     "Ώρα" to "Hour",
     "Πάτησε μια καταγραφή για να διορθώσεις την αιτία ή τη διάρκεια ταΐσματος/ύπνου." to
         "Tap a record to correct the cause or feeding/sleep duration.",
+    "Πάτησε μια καταγραφή για να διορθώσεις ώρα, τύπο ή διάρκεια." to
+        "Tap a record to correct the time, type, or duration.",
     "Λεπτά" to "Minutes",
     "Δευτερόλεπτα" to "Seconds",
     "Αποθήκευση" to "Save",
@@ -472,7 +484,7 @@ private val EN: Map<String, String> = mapOf(
     "Δείγματα εκμάθησης" to "Training examples",
     "Κατανομή αιτιών" to "Cause distribution",
     "Καταγραφές" to "Records",
-    "Ώρα" to "Time",
+    "Ώρα καταγραφής" to "Time",
     "Αιτία" to "Cause",
     "Ανατροφοδότηση" to "Feedback",
     "✓ σωστό" to "✓ correct",
@@ -480,6 +492,20 @@ private val EN: Map<String, String> = mapOf(
     "Σύνοψη για παιδίατρο" to "Doctor visit summary",
     "Σύντομη εικόνα για επίσκεψη: κλάματα, ταΐσματα, πάνες και tummy time από τα πρόσφατα δεδομένα." to
         "A compact visit overview: cries, feedings, diapers and tummy time from recent data.",
+    "Σύντομη εικόνα για επίσκεψη: κλάματα, ταΐσματα, ύπνοι, πάνες και tummy time από τα πρόσφατα δεδομένα." to
+        "A compact visit overview: cries, feedings, sleeps, diapers and tummy time from recent data.",
+    "Ύπνοι τελευταίου 24ώρου" to "Sleeps in last 24h",
+    "Χρόνος ύπνου τελευταίου 24ώρου" to "Sleep time in the last 24 hours",
+    "Ύπνοι ανά ημέρα (τελευταίες 14)" to "Sleeps per day (last 14)",
+    "Μέση διάρκεια" to "Average duration",
+    "Επεξεργασία πάνας" to "Edit diaper",
+    "Επεξεργασία tummy time" to "Edit tummy time",
+    "Διαγραφή πάνας;" to "Delete this diaper?",
+    "Διαγραφή tummy time;" to "Delete this tummy time?",
+    "Θα διαγραφεί οριστικά αυτή η καταγραφή. Δεν μπορεί να αναιρεθεί." to
+        "This record will be permanently deleted. This can't be undone.",
+    "Ενημερώθηκε η πάνα." to "Diaper updated.",
+    "Ενημερώθηκε το tummy time." to "Tummy time updated.",
     "Κλάματα τελευταίου 24ώρου" to "Cries in last 24h",
     "Κλάματα τελευταίων 7 ημερών" to "Cries in last 7 days",
     "Ταΐσματα τελευταίου 24ώρου" to "Feedings in last 24h",
@@ -617,13 +643,13 @@ private val EN: Map<String, String> = mapOf(
     "Καμπύλες ανάπτυξης" to "Growth curves",
     "Καμπύλες αναφοράς βάρους και ύψους ανά ηλικία και φύλο, από τον Παγκόσμιο Οργανισμό Υγείας (ΠΟΥ). Ενημερωτικό βοήθημα — δεν χρησιμοποιεί τα δικά σου δεδομένα." to
         "Reference curves for weight and height by age and sex, from the World Health Organization (WHO). Informational aid — it does not use your own data.",
-    "Δεν φορτώθηκαν τα δεδομένα WHO. Δοκίμασε ξανά αργότερα." to
+    "Δεν φορτώθηκαν τα δεδομένα ΠΟΥ. Δοκίμασε ξανά αργότερα." to
         "Could not load WHO data. Try again later.",
     "Βάρος για την ηλικία" to "Weight for age",
     "Μήκος/ύψος για την ηλικία" to "Length/height for age",
-    "Κάτω γραμμή αναφοράς WHO" to "Lower WHO reference line",
-    "Μέση γραμμή αναφοράς WHO" to "Middle WHO reference line",
-    "Πάνω γραμμή αναφοράς WHO" to "Upper WHO reference line",
+    "Ελάχιστη γραμμή αναφοράς" to "Minimum reference line",
+    "Μέση γραμμή αναφοράς" to "Middle reference line",
+    "Μέγιστη γραμμή αναφοράς" to "Maximum reference line",
     "Ηλικία (μήνες)" to "Age (months)",
     "Ηλικία (μήνες) · κάνε pinch ή +/− για μεγέθυνση" to
         "Age (months) · pinch or use +/− to zoom",
@@ -632,9 +658,9 @@ private val EN: Map<String, String> = mapOf(
     "Σμίκρυνση" to "Zoom out",
     "Επαναφορά" to "Reset",
     "Βάρος & ύψος" to "Weight & height",
-    "Οι καμπύλες είναι σημείο αναφοράς του WHO και όχι ιατρική διάγνωση. Συζήτησε ανησυχίες με παιδίατρο." to
+    "Οι καμπύλες είναι σημείο αναφοράς του ΠΟΥ και όχι ιατρική διάγνωση. Συζήτησε ανησυχίες με παιδίατρο." to
         "These curves are WHO reference points, not a medical diagnosis. Discuss any concerns with your pediatrician.",
-    "Πηγή δεδομένων: WHO Child Growth Standards, 2006. Χωρίς έγκριση ή σύνδεση με τον WHO." to
+    "Πηγή δεδομένων: Πρότυπα ανάπτυξης παιδιών ΠΟΥ, 2006. Χωρίς έγκριση ή σύνδεση με τον ΠΟΥ." to
         "Data source: WHO Child Growth Standards, 2006. No endorsement by WHO.",
     "kg" to "kg",
     "cm" to "cm",

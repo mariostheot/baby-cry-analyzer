@@ -317,28 +317,28 @@ fun SettingsScreen(
                     ActionRow(
                         Icons.Filled.Schedule,
                         tr("Πρωινή υπενθύμιση"),
-                        "%02d:00".format(tummyReminderHourAm),
+                        formatHour12(tummyReminderHourAm),
                     ) {
                         android.app.TimePickerDialog(
                             context,
                             { _, h, _ -> viewModel.setTummyReminderHourAm(h) },
                             tummyReminderHourAm,
                             0,
-                            true,
+                            false,
                         ).show()
                     }
                     Divider(Modifier.padding(vertical = 8.dp))
                     ActionRow(
                         Icons.Filled.Schedule,
                         tr("Απογευματινή υπενθύμιση"),
-                        "%02d:00".format(tummyReminderHourPm),
+                        formatHour12(tummyReminderHourPm),
                     ) {
                         android.app.TimePickerDialog(
                             context,
                             { _, h, _ -> viewModel.setTummyReminderHourPm(h) },
                             tummyReminderHourPm,
                             0,
-                            true,
+                            false,
                         ).show()
                     }
                 }
@@ -581,8 +581,8 @@ private fun backupHealthText(lastBackupAt: Long, recordings: Int): String {
             AppLang.EL -> "ποτέ"
         }
     } else {
-        val fmt = SimpleDateFormat("d/M HH:mm", if (currentAppLang == AppLang.EN) Locale.ENGLISH else Locale("el"))
-        fmt.format(Date(lastBackupAt))
+        val fmt = SimpleDateFormat("d/M", if (currentAppLang == AppLang.EN) Locale.ENGLISH else Locale("el"))
+        "${fmt.format(Date(lastBackupAt))} ${formatTime12(lastBackupAt)}"
     }
     return when (currentAppLang) {
         AppLang.EN -> "Last backup: $last • includes $recordings recordings"

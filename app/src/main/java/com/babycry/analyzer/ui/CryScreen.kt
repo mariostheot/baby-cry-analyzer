@@ -117,6 +117,7 @@ fun HomeScreen(
     LaunchedEffect(profile.id) {
         showWeightAdd = false
         showHeightAdd = false
+        showDiaper = false
     }
 
     Column(

@@ -4,8 +4,6 @@ import java.util.Calendar
 import java.util.TimeZone
 
 internal object CareInsightTime {
-    private const val DAY_MS = 86_400_000L
-
     fun startOfDay(ts: Long, zone: TimeZone = TimeZone.getDefault()): Long =
         Calendar.getInstance(zone).apply {
             timeInMillis = ts
@@ -13,6 +11,13 @@ internal object CareInsightTime {
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+    /** Shift a local midnight by [days] calendar days (DST-safe 23h/25h lengths). */
+    fun shiftDay(dayStart: Long, days: Int, zone: TimeZone = TimeZone.getDefault()): Long =
+        Calendar.getInstance(zone).apply {
+            timeInMillis = dayStart
+            add(Calendar.DATE, days)
         }.timeInMillis
 
     fun dayKey(ts: Long, zone: TimeZone = TimeZone.getDefault()): Long = startOfDay(ts, zone)
@@ -42,8 +47,9 @@ internal object CareInsightTime {
         val today = startOfDay(nowMs, zone)
         // Include today in the most recent range: 0..3 means today plus the
         // two preceding calendar days. Consecutive ranges therefore do not overlap.
-        val rangeStart = today - (daysBackEnd - 1).coerceAtLeast(0) * DAY_MS
-        val rangeEnd = today - daysBackStart * DAY_MS + DAY_MS
+        // Uses Calendar day shifts so DST spring-forward / fall-back days stay aligned.
+        val rangeStart = shiftDay(today, -(daysBackEnd - 1).coerceAtLeast(0), zone)
+        val rangeEnd = shiftDay(today, -(daysBackStart - 1), zone)
         return timestamps.filter { it in rangeStart until rangeEnd }
     }
 

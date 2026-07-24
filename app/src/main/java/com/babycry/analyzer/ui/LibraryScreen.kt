@@ -70,13 +70,14 @@ fun LibraryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     }
 
     val timeFmt = remember(language) {
-        SimpleDateFormat("HH:mm", if (currentAppLang == AppLang.EN) Locale.ENGLISH else Locale("el"))
+        { ts: Long -> formatTime12(ts) }
     }
     val dayHeaderFmt = remember(language) {
         SimpleDateFormat("EEEE d/M", if (currentAppLang == AppLang.EN) Locale.ENGLISH else Locale("el"))
     }
 
-    val todayStart = remember { startOfDay(System.currentTimeMillis()) }
+    val nowTick = rememberMidnightTick()
+    val todayStart = startOfDay(nowTick)
     // Newest recording day first, so the parent lands on the most recent clips.
     val recordingDays = remember(clips) {
         clips.map { startOfDay(it.timestamp) }.distinct().sortedDescending()
@@ -160,7 +161,7 @@ fun LibraryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                     LibraryRow(
                         event = e,
                         labels = labels,
-                        time = timeFmt.format(Date(e.timestamp)),
+                        time = timeFmt(e.timestamp),
                         onPlay = { viewModel.playStoredClip(e.id) },
                         isPlaying = playback.key == "event:${e.id}" && !playback.paused,
                         isPaused = playback.key == "event:${e.id}" && playback.paused,

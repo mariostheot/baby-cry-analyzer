@@ -33,15 +33,13 @@ import com.babycry.analyzer.data.StatsSummary
 import com.babycry.analyzer.data.CryEvent
 import com.babycry.analyzer.data.DiaperEvent
 import com.babycry.analyzer.data.FeedingEvent
+import com.babycry.analyzer.data.SleepEvent
 import com.babycry.analyzer.data.TummyTimeEvent
 import com.babycry.analyzer.model.DiaperType
 import com.babycry.analyzer.ui.i18n.AppLang
 import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.tr
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 import kotlin.math.roundToInt
 
 @Composable
@@ -52,6 +50,7 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val feedbackCount by viewModel.feedbackCount.collectAsState()
     val events by viewModel.recentEvents.collectAsState()
     val feedings by viewModel.recentFeedings.collectAsState()
+    val sleeps by viewModel.recentSleep.collectAsState()
     val diapers by viewModel.recentDiapers.collectAsState()
     val tummy by viewModel.recentTummy.collectAsState()
     val careInsights by viewModel.careInsights.collectAsState()
@@ -129,6 +128,7 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
         BabyDayTimelineCard(
             cries = events.filter { it.cryDetected },
             feedings = feedings,
+            sleeps = sleeps,
             diapers = diapers,
             tummy = tummy,
         )
@@ -191,18 +191,40 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
 private fun BabyDayTimelineCard(
     cries: List<CryEvent>,
     feedings: List<FeedingEvent>,
+    sleeps: List<SleepEvent>,
     diapers: List<DiaperEvent>,
     tummy: List<TummyTimeEvent>,
 ) {
     SectionHeader(
         tr("Ημέρα του μωρού"),
-        tr("Μια γρήγορη γραμμή με τα σημερινά κλάματα, ταΐσματα, πάνες και tummy time."),
+        tr("Μια γρήγορη γραμμή με τα σημερινά κλάματα, ταΐσματα, ύπνους, πάνες και tummy time."),
     )
     Spacer(Modifier.height(8.dp))
     val todayStart = startOfToday()
+    val now = System.currentTimeMillis()
+    val todayEnd = nextLocalMidnight(todayStart)
     val items = buildList {
         cries.filter { it.timestamp >= todayStart }.forEach { add(TimelineDot(it.timestamp, "😢", tr("Κλάμα"))) }
-        feedings.filter { it.timestamp >= todayStart && it.durationMs >= 0L }.forEach { add(TimelineDot(it.timestamp, "🍼", tr("Τάισμα"))) }
+        feedings.filter { sessionOverlapsToday(it.timestamp, it.durationMs, todayStart, todayEnd, now) }
+            .forEach {
+                add(
+                    TimelineDot(
+                        displayTimeToday(it.timestamp, it.durationMs, todayStart, now),
+                        "🍼",
+                        tr("Τάισμα"),
+                    ),
+                )
+            }
+        sleeps.filter { sessionOverlapsToday(it.timestamp, it.durationMs, todayStart, todayEnd, now) }
+            .forEach {
+                add(
+                    TimelineDot(
+                        displayTimeToday(it.timestamp, it.durationMs, todayStart, now),
+                        "😴",
+                        tr("Ύπνος"),
+                    ),
+                )
+            }
         diapers.filter { it.timestamp >= todayStart }.forEach {
             val type = DiaperType.fromNameOrNull(it.type) ?: DiaperType.WET
             add(TimelineDot(it.timestamp, type.emoji, tr("Πάνα")))
@@ -262,7 +284,35 @@ private fun startOfToday(): Long = Calendar.getInstance().apply {
     set(Calendar.MILLISECOND, 0)
 }.timeInMillis
 
-private fun hourMinute(ts: Long): String = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ts))
+private fun nextLocalMidnight(dayStart: Long): Long {
+    val c = Calendar.getInstance().apply { timeInMillis = dayStart }
+    c.add(Calendar.DATE, 1)
+    return c.timeInMillis
+}
+
+private fun sessionOverlapsToday(
+    start: Long,
+    durationMs: Long,
+    dayStart: Long,
+    dayEnd: Long,
+    now: Long,
+): Boolean {
+    val end = if (durationMs < 0L) now else start + durationMs
+    return start < dayEnd && end > dayStart
+}
+
+private fun displayTimeToday(
+    start: Long,
+    durationMs: Long,
+    dayStart: Long,
+    now: Long,
+): Long {
+    if (start >= dayStart) return start
+    val end = if (durationMs < 0L) now else start + durationMs
+    return end.coerceAtLeast(dayStart)
+}
+
+private fun hourMinute(ts: Long): String = formatTime12(ts)
 
 @Composable
 private fun Caption(text: String) {

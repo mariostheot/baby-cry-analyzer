@@ -129,7 +129,7 @@ fun GrowthScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
-            GrowthLoad.Failed -> GateMessage(tr("Δεν φορτώθηκαν τα δεδομένα WHO. Δοκίμασε ξανά αργότερα."))
+            GrowthLoad.Failed -> GateMessage(tr("Δεν φορτώθηκαν τα δεδομένα ΠΟΥ. Δοκίμασε ξανά αργότερα."))
             is GrowthLoad.Ready -> {
                 GrowthChartCard(
                     title = tr("Βάρος για την ηλικία"),
@@ -151,7 +151,7 @@ fun GrowthScreen(
                 DisclaimerCard()
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    tr("Πηγή δεδομένων: WHO Child Growth Standards, 2006. Χωρίς έγκριση ή σύνδεση με τον WHO."),
+                    tr("Πηγή δεδομένων: Πρότυπα ανάπτυξης παιδιών ΠΟΥ, 2006. Χωρίς έγκριση ή σύνδεση με τον ΠΟΥ."),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 )
@@ -188,7 +188,7 @@ private fun DisclaimerCard() {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
     ) {
         Text(
-            tr("Οι καμπύλες είναι σημείο αναφοράς του WHO και όχι ιατρική διάγνωση. Συζήτησε ανησυχίες με παιδίατρο."),
+            tr("Οι καμπύλες είναι σημείο αναφοράς του ΠΟΥ και όχι ιατρική διάγνωση. Συζήτησε ανησυχίες με παιδίατρο."),
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(12.dp),
         )
@@ -214,9 +214,9 @@ private fun GrowthChartCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                LegendDot(tr("Κάτω γραμμή αναφοράς WHO"), MaterialTheme.colorScheme.outline)
-                LegendDot(tr("Μέση γραμμή αναφοράς WHO"), MaterialTheme.colorScheme.outline.copy(alpha = 0.85f))
-                LegendDot(tr("Πάνω γραμμή αναφοράς WHO"), MaterialTheme.colorScheme.outline.copy(alpha = 0.65f))
+                LegendDot(tr("Ελάχιστη γραμμή αναφοράς"), MaterialTheme.colorScheme.outline)
+                LegendDot(tr("Μέση γραμμή αναφοράς"), MaterialTheme.colorScheme.outline.copy(alpha = 0.85f))
+                LegendDot(tr("Μέγιστη γραμμή αναφοράς"), MaterialTheme.colorScheme.outline.copy(alpha = 0.65f))
             }
             Spacer(Modifier.height(8.dp))
             WhoReferenceChart(

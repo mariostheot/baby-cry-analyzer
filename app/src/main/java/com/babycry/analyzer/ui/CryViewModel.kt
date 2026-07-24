@@ -172,14 +172,15 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     val recentHeights: StateFlow<List<HeightEvent>> = _profile.flatMapLatest { repo.recentHeights(it.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // kotlinx-coroutines only offers typed combine() up to 5 flows, so fold the four care
+    // kotlinx-coroutines only offers typed combine() up to 5 flows, so fold the care
     // event streams into one change-trigger first and combine that with profile + language.
     private val careEventsChanged: kotlinx.coroutines.flow.Flow<Unit> = combine(
         recentEvents,
         recentFeedings,
         recentDiapers,
         recentSleep,
-    ) { _, _, _, _ -> Unit }
+        recentTummy,
+    ) { _, _, _, _, _ -> Unit }
 
     val careInsights: StateFlow<CareInsightsUiState> = combine(
         _profile,
@@ -475,10 +476,16 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateFeeding(eventId: Long, startedAt: Long, durationMs: Long) {
         viewModelScope.launch {
-            if (repo.updateFeeding(eventId, startedAt, durationMs)) {
-                _home.update { it.copy(message = trS("Ενημερώθηκε το τάισμα.")) }
-                scheduleFeedReminder()
-            }
+            runCatching { repo.updateFeeding(eventId, startedAt, durationMs) }
+                .onSuccess { ok ->
+                    if (ok) {
+                        _home.update { it.copy(message = trS("Ενημερώθηκε το τάισμα.")) }
+                        scheduleFeedReminder()
+                    }
+                }
+                .onFailure { t ->
+                    _home.update { it.copy(message = t.message ?: trS("Σφάλμα")) }
+                }
         }
     }
 
@@ -531,9 +538,15 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateSleep(eventId: Long, startedAt: Long, durationMs: Long) {
         viewModelScope.launch {
-            if (repo.updateSleep(eventId, startedAt, durationMs)) {
-                _home.update { it.copy(message = trS("Ενημερώθηκε ο ύπνος.")) }
-            }
+            runCatching { repo.updateSleep(eventId, startedAt, durationMs) }
+                .onSuccess { ok ->
+                    if (ok) {
+                        _home.update { it.copy(message = trS("Ενημερώθηκε ο ύπνος.")) }
+                    }
+                }
+                .onFailure { t ->
+                    _home.update { it.copy(message = t.message ?: trS("Σφάλμα")) }
+                }
         }
     }
 
@@ -603,10 +616,51 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun logTummy() {
+    fun updateDiaper(id: Long, type: DiaperType, timestamp: Long) {
         viewModelScope.launch {
-            repo.logTummy()
-            _home.update { it.copy(message = trS("Καταγράφηκε το tummy time. Μπράβο!")) }
+            runCatching { repo.updateDiaper(id, type, timestamp) }
+                .onSuccess { ok ->
+                    if (ok) _home.update { it.copy(message = trS("Ενημερώθηκε η πάνα.")) }
+                }
+                .onFailure { t ->
+                    _home.update { it.copy(message = t.message ?: trS("Σφάλμα")) }
+                }
+        }
+    }
+
+    fun deleteDiaper(id: Long) {
+        viewModelScope.launch {
+            repo.deleteDiaper(id)
+        }
+    }
+
+    fun logTummy(timestamp: Long = System.currentTimeMillis()) {
+        viewModelScope.launch {
+            runCatching { repo.logTummy(timestamp) }
+                .onSuccess {
+                    _home.update { it.copy(message = trS("Καταγράφηκε το tummy time. Μπράβο!")) }
+                }
+                .onFailure { t ->
+                    _home.update { it.copy(message = t.message ?: trS("Σφάλμα")) }
+                }
+        }
+    }
+
+    fun updateTummy(id: Long, timestamp: Long) {
+        viewModelScope.launch {
+            runCatching { repo.updateTummy(id, timestamp) }
+                .onSuccess { ok ->
+                    if (ok) _home.update { it.copy(message = trS("Ενημερώθηκε το tummy time.")) }
+                }
+                .onFailure { t ->
+                    _home.update { it.copy(message = t.message ?: trS("Σφάλμα")) }
+                }
+        }
+    }
+
+    fun deleteTummy(id: Long) {
+        viewModelScope.launch {
+            repo.deleteTummy(id)
         }
     }
 
@@ -696,12 +750,15 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun schedulePendingConfirmations() {
+    /**
+     * Re-arm confirm alarms for the **active** baby only (process death / restore clears AlarmManager).
+     * Other profiles stay silent until [selectBaby] — matching the multi-baby cancel policy.
+     */
+    fun schedulePendingConfirmations() {
         val app = getApplication<Application>()
-        for (profile in repo.getProfiles()) {
-            for (eventId in repo.pendingEventIds(profile.id)) {
-                ConfirmReminder.schedule(app, REMINDER_DELAY_MIN, profile.id, eventId)
-            }
+        val profileId = repo.currentProfileId()
+        for (eventId in repo.pendingEventIds(profileId)) {
+            ConfirmReminder.schedule(app, REMINDER_DELAY_MIN, profileId, eventId)
         }
     }
 
@@ -808,11 +865,25 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectBaby(id: String) {
         viewModelScope.launch {
+            val previousId = repo.currentProfileId()
             clearHomeForProfileSwitch()
             _pending.value = null
+            // Don't keep firing "why did Baby A cry?" while the parent is looking at Baby B.
+            if (previousId != id) {
+                ConfirmReminder.cancelAllForProfile(
+                    getApplication<Application>(),
+                    previousId,
+                    repo.pendingEventIds(previousId),
+                )
+            }
             repo.setActiveProfile(id)
             refreshProfiles()
             refreshActiveProfileState()
+            // Re-arm confirms for the baby just selected (delay from now).
+            val app = getApplication<Application>()
+            for (eventId in repo.pendingEventIds(id)) {
+                ConfirmReminder.schedule(app, REMINDER_DELAY_MIN, id, eventId)
+            }
         }
     }
 

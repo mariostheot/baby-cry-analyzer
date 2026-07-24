@@ -305,6 +305,7 @@ fun WeightEntryDialog(
     onDismiss: () -> Unit,
     onSave: (grams: Int, timestamp: Long) -> Unit,
     onDelete: (() -> Unit)?,
+    initialTimestamp: Long? = null,
 ) {
     var kgText by remember(initial?.id) {
         mutableStateOf(
@@ -314,18 +315,33 @@ fun WeightEntryDialog(
             } ?: "",
         )
     }
-    var timestampMillis by remember(initial?.id) {
-        mutableStateOf(initial?.timestamp ?: System.currentTimeMillis())
+    var timestampMillis by remember(initial?.id, initialTimestamp) {
+        mutableStateOf(initial?.timestamp ?: initialTimestamp ?: System.currentTimeMillis())
     }
-    var showDatePicker by remember { mutableStateOf(false) }
+    var clock by remember(initial?.id, initialTimestamp) {
+        mutableStateOf(
+            ClockTime12.fromMillis(initial?.timestamp ?: initialTimestamp ?: System.currentTimeMillis()),
+        )
+    }
+    var showDatePicker by remember(initial?.id, initialTimestamp) { mutableStateOf(false) }
     val locale = if (currentAppLang == AppLang.EN) Locale.ENGLISH else Locale("el")
     val dateFmt = remember(locale) { SimpleDateFormat("dd/MM/yyyy", locale) }
     val parsedKg = kgText.trim()
         .replace(',', '.')
         .toDoubleOrNull()
         ?.takeIf { value -> kotlin.math.round(value * 1000).toInt() in 1..30_000 }
-    val timestampValid = timestampMillis <= System.currentTimeMillis()
-    val valid = parsedKg != null && timestampValid
+    val dayStart = remember(timestampMillis) {
+        java.util.Calendar.getInstance().apply {
+            timeInMillis = timestampMillis
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+    val combinedTs = if (clock.isValid) atDayTime(dayStart, clock) else timestampMillis
+    val timestampValid = combinedTs <= System.currentTimeMillis()
+    val valid = parsedKg != null && clock.isValid && timestampValid
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -344,6 +360,12 @@ fun WeightEntryDialog(
                 OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
                     Text(dateFmt.format(Date(timestampMillis)))
                 }
+                Spacer(Modifier.height(12.dp))
+                Time12Row(
+                    label = tr("Ώρα μέτρησης"),
+                    time = clock,
+                    onTimeChange = { clock = it },
+                )
                 if (!timestampValid) {
                     Text(
                         tr("Διάλεξε σημερινή ή παλαιότερη ημερομηνία."),
@@ -357,7 +379,7 @@ fun WeightEntryDialog(
             TextButton(
                 onClick = {
                     val kg = parsedKg ?: return@TextButton
-                    onSave(kotlin.math.round(kg * 1000).toInt(), timestampMillis)
+                    onSave(kotlin.math.round(kg * 1000).toInt(), combinedTs)
                 },
                 enabled = valid,
             ) { Text(tr("Αποθήκευση")) }
@@ -377,7 +399,9 @@ fun WeightEntryDialog(
             initialDateMillis = timestampMillis,
             onDismiss = { showDatePicker = false },
             onConfirm = {
-                timestampMillis = it
+                val keep = if (clock.isValid) clock else ClockTime12.fromMillis(timestampMillis)
+                timestampMillis = atDayTime(it, keep)
+                clock = ClockTime12.fromMillis(timestampMillis)
                 showDatePicker = false
             },
             title = tr("Ημερομηνία μέτρησης"),
@@ -391,6 +415,7 @@ fun HeightEntryDialog(
     onDismiss: () -> Unit,
     onSave: (millimeters: Int, timestamp: Long) -> Unit,
     onDelete: (() -> Unit)?,
+    initialTimestamp: Long? = null,
 ) {
     var cmText by remember(initial?.id) {
         mutableStateOf(
@@ -400,18 +425,33 @@ fun HeightEntryDialog(
             } ?: "",
         )
     }
-    var timestampMillis by remember(initial?.id) {
-        mutableStateOf(initial?.timestamp ?: System.currentTimeMillis())
+    var timestampMillis by remember(initial?.id, initialTimestamp) {
+        mutableStateOf(initial?.timestamp ?: initialTimestamp ?: System.currentTimeMillis())
     }
-    var showDatePicker by remember { mutableStateOf(false) }
+    var clock by remember(initial?.id, initialTimestamp) {
+        mutableStateOf(
+            ClockTime12.fromMillis(initial?.timestamp ?: initialTimestamp ?: System.currentTimeMillis()),
+        )
+    }
+    var showDatePicker by remember(initial?.id, initialTimestamp) { mutableStateOf(false) }
     val locale = if (currentAppLang == AppLang.EN) Locale.ENGLISH else Locale("el")
     val dateFmt = remember(locale) { SimpleDateFormat("dd/MM/yyyy", locale) }
     val parsedCm = cmText.trim()
         .replace(',', '.')
         .toDoubleOrNull()
         ?.takeIf { value -> kotlin.math.round(value * 10).toInt() in 1..1499 }
-    val timestampValid = timestampMillis <= System.currentTimeMillis()
-    val valid = parsedCm != null && timestampValid
+    val dayStart = remember(timestampMillis) {
+        java.util.Calendar.getInstance().apply {
+            timeInMillis = timestampMillis
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+    val combinedTs = if (clock.isValid) atDayTime(dayStart, clock) else timestampMillis
+    val timestampValid = combinedTs <= System.currentTimeMillis()
+    val valid = parsedCm != null && clock.isValid && timestampValid
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -430,6 +470,12 @@ fun HeightEntryDialog(
                 OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
                     Text(dateFmt.format(Date(timestampMillis)))
                 }
+                Spacer(Modifier.height(12.dp))
+                Time12Row(
+                    label = tr("Ώρα μέτρησης"),
+                    time = clock,
+                    onTimeChange = { clock = it },
+                )
                 if (!timestampValid) {
                     Text(
                         tr("Διάλεξε σημερινή ή παλαιότερη ημερομηνία."),
@@ -443,7 +489,7 @@ fun HeightEntryDialog(
             TextButton(
                 onClick = {
                     val cm = parsedCm ?: return@TextButton
-                    onSave(kotlin.math.round(cm * 10).toInt(), timestampMillis)
+                    onSave(kotlin.math.round(cm * 10).toInt(), combinedTs)
                 },
                 enabled = valid,
             ) { Text(tr("Αποθήκευση")) }
@@ -463,7 +509,9 @@ fun HeightEntryDialog(
             initialDateMillis = timestampMillis,
             onDismiss = { showDatePicker = false },
             onConfirm = {
-                timestampMillis = it
+                val keep = if (clock.isValid) clock else ClockTime12.fromMillis(timestampMillis)
+                timestampMillis = atDayTime(it, keep)
+                clock = ClockTime12.fromMillis(timestampMillis)
                 showDatePicker = false
             },
             title = tr("Ημερομηνία μέτρησης"),

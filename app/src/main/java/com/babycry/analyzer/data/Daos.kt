@@ -160,6 +160,15 @@ interface DiaperDao {
     @Query("UPDATE diaper_events SET profileId = :profileId WHERE profileId = ''")
     suspend fun assignLegacy(profileId: String)
 
+    @Query(
+        "UPDATE diaper_events SET timestamp = :timestamp, type = :type " +
+            "WHERE id = :id AND profileId = :profileId",
+    )
+    suspend fun updateEntry(id: Long, profileId: String, timestamp: Long, type: String): Int
+
+    @Query("DELETE FROM diaper_events WHERE id = :id AND profileId = :profileId")
+    suspend fun deleteEntry(id: Long, profileId: String): Int
+
     @Query("DELETE FROM diaper_events WHERE profileId = :profileId")
     suspend fun clear(profileId: String)
 
@@ -190,6 +199,15 @@ interface TummyDao {
 
     @Query("UPDATE tummy_events SET profileId = :profileId WHERE profileId = ''")
     suspend fun assignLegacy(profileId: String)
+
+    @Query(
+        "UPDATE tummy_events SET timestamp = :timestamp " +
+            "WHERE id = :id AND profileId = :profileId",
+    )
+    suspend fun updateEntry(id: Long, profileId: String, timestamp: Long): Int
+
+    @Query("DELETE FROM tummy_events WHERE id = :id AND profileId = :profileId")
+    suspend fun deleteEntry(id: Long, profileId: String): Int
 
     @Query("DELETE FROM tummy_events WHERE profileId = :profileId")
     suspend fun clear(profileId: String)

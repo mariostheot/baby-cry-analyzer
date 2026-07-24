@@ -263,6 +263,7 @@ private fun AppRootContent(
         viewModel.refreshPending()
         viewModel.scheduleFeedReminder()
         viewModel.scheduleTummyReminder()
+        viewModel.schedulePendingConfirmations()
     }
 
     LaunchedEffect(openConfirmRequest, openConfirmProfileId, openConfirmEventId, onboardingDone) {

@@ -347,11 +347,16 @@ class CryRepository private constructor(
         durationMs: Long,
         profileId: String = activeProfileId(),
     ): Boolean = withContext(Dispatchers.IO) {
+        require(durationMs > 0L) { "Feeding duration must be positive." }
+        require(startedAt <= System.currentTimeMillis()) { "Feeding start cannot be in the future." }
+        require(startedAt + durationMs <= System.currentTimeMillis()) {
+            "Feeding end cannot be in the future."
+        }
         feedingDao.updateCompleted(
             id = eventId,
             profileId = profileId,
             timestamp = startedAt,
-            durationMs = durationMs.coerceAtLeast(0L),
+            durationMs = durationMs,
         ) > 0
     }
 
@@ -392,9 +397,42 @@ class CryRepository private constructor(
         diaperDao.insert(DiaperEvent(profileId = profileId, timestamp = timestamp, type = type.name))
     }
 
-    suspend fun logTummy() = withContext(Dispatchers.IO) {
-        tummyDao.insert(TummyTimeEvent(profileId = activeProfileId(), timestamp = System.currentTimeMillis()))
+    suspend fun updateDiaper(
+        id: Long,
+        type: DiaperType,
+        timestamp: Long,
+        profileId: String = activeProfileId(),
+    ): Boolean = withContext(Dispatchers.IO) {
+        require(timestamp <= System.currentTimeMillis()) { "Diaper time cannot be in the future." }
+        diaperDao.updateEntry(id, profileId, timestamp, type.name) > 0
     }
+
+    suspend fun deleteDiaper(id: Long, profileId: String = activeProfileId()): Boolean =
+        withContext(Dispatchers.IO) {
+            diaperDao.deleteEntry(id, profileId) > 0
+        }
+
+    suspend fun logTummy(
+        timestamp: Long = System.currentTimeMillis(),
+        profileId: String = activeProfileId(),
+    ) = withContext(Dispatchers.IO) {
+        require(timestamp <= System.currentTimeMillis()) { "Tummy time cannot be in the future." }
+        tummyDao.insert(TummyTimeEvent(profileId = profileId, timestamp = timestamp))
+    }
+
+    suspend fun updateTummy(
+        id: Long,
+        timestamp: Long,
+        profileId: String = activeProfileId(),
+    ): Boolean = withContext(Dispatchers.IO) {
+        require(timestamp <= System.currentTimeMillis()) { "Tummy time cannot be in the future." }
+        tummyDao.updateEntry(id, profileId, timestamp) > 0
+    }
+
+    suspend fun deleteTummy(id: Long, profileId: String = activeProfileId()): Boolean =
+        withContext(Dispatchers.IO) {
+            tummyDao.deleteEntry(id, profileId) > 0
+        }
 
     suspend fun logWeight(
         grams: Int,
@@ -480,11 +518,16 @@ class CryRepository private constructor(
         durationMs: Long,
         profileId: String = activeProfileId(),
     ): Boolean = withContext(Dispatchers.IO) {
+        require(durationMs > 0L) { "Sleep duration must be positive." }
+        require(startedAt <= System.currentTimeMillis()) { "Sleep start cannot be in the future." }
+        require(startedAt + durationMs <= System.currentTimeMillis()) {
+            "Sleep end cannot be in the future."
+        }
         sleepDao.updateCompleted(
             id = eventId,
             profileId = profileId,
             timestamp = startedAt,
-            durationMs = durationMs.coerceAtLeast(0L),
+            durationMs = durationMs,
         ) > 0
     }
 
@@ -530,6 +573,32 @@ class CryRepository private constructor(
         set(java.util.Calendar.SECOND, 0)
         set(java.util.Calendar.MILLISECOND, 0)
     }.timeInMillis
+
+    /** Local midnight for [ts] (DST-safe). */
+    private fun startOfLocalDay(ts: Long): Long = java.util.Calendar.getInstance().apply {
+        timeInMillis = ts
+        set(java.util.Calendar.HOUR_OF_DAY, 0)
+        set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+    private fun shiftLocalDay(dayStart: Long, days: Int): Long = java.util.Calendar.getInstance().apply {
+        timeInMillis = dayStart
+        add(java.util.Calendar.DATE, days)
+    }.timeInMillis
+
+    /** Inclusive count of calendar days from first event's day through today. */
+    private fun calendarDaysTracked(firstTs: Long, todayStart: Long = startOfToday()): Int {
+        val firstDay = startOfLocalDay(firstTs)
+        var cur = firstDay
+        var n = 1
+        while (cur < todayStart && n < 100_000) {
+            cur = shiftLocalDay(cur, 1)
+            n++
+        }
+        return n.coerceAtLeast(1)
+    }
 
     fun isTummyReminderEnabled(): Boolean = profilePrefs.getBoolean(TUMMY_REMINDER_ON, true)
 
@@ -949,12 +1018,13 @@ class CryRepository private constructor(
     suspend fun exportReportHtml(): String = withContext(Dispatchers.IO) {
         val lang = getLanguage()
         val df = SimpleDateFormat(
-            "EEE dd/MM/yyyy HH:mm",
+            "EEE dd/MM/yyyy h:mm a",
             if (lang == AppLang.EN) Locale.ENGLISH else Locale("el"),
         )
         val profileId = activeProfileId()
         val events = cryDao.allEvents(profileId)
         val feedings = feedingDao.allList(profileId)
+        val sleeps = sleepDao.allList(profileId)
         val diapers = diaperDao.allList(profileId)
         val weights = weightDao.allList(profileId)
         val heights = heightDao.allList(profileId)
@@ -1027,13 +1097,25 @@ class CryRepository private constructor(
         val feedingDuration24 = feedings
             .filter { it.timestamp >= last24h && it.durationMs > 0L }
             .sumOf { it.durationMs }
+        val sleeps24 = sleeps.count {
+            val end = if (it.durationMs < 0L) nowMs else it.timestamp + it.durationMs
+            it.timestamp < nowMs && end > last24h
+        }
+        val sleepDuration24 = sleeps
+            .filter { it.durationMs > 0L }
+            .sumOf { sleep ->
+                val end = sleep.timestamp + sleep.durationMs
+                val overlapStart = maxOf(sleep.timestamp, last24h)
+                val overlapEnd = minOf(end, nowMs)
+                (overlapEnd - overlapStart).coerceAtLeast(0L)
+            }
         val diapers24 = diapers.count { it.timestamp >= last24h }
         val poops24 = diapers.count {
             it.timestamp >= last24h && DiaperType.fromNameOrNull(it.type)?.hasStool == true
         }
         val tummy24 = tummy.count { it.timestamp >= last24h }
         sb.append("<h2>${trS("Σύνοψη για παιδίατρο")}</h2>")
-        sb.append("<p class=\"note\">${trS("Σύντομη εικόνα για επίσκεψη: κλάματα, ταΐσματα, πάνες και tummy time από τα πρόσφατα δεδομένα.")}</p>")
+        sb.append("<p class=\"note\">${trS("Σύντομη εικόνα για επίσκεψη: κλάματα, ταΐσματα, ύπνοι, πάνες και tummy time από τα πρόσφατα δεδομένα.")}</p>")
         sb.append("<div class=\"row\"><span>${trS("Κλάματα τελευταίου 24ώρου")}</span><span>$cries24</span></div>")
         sb.append("<div class=\"row\"><span>${trS("Κλάματα τελευταίων 7 ημερών")}</span><span>$cries7</span></div>")
         sb.append("<div class=\"row\"><span>${trS("Ταΐσματα τελευταίου 24ώρου")}</span><span>$feeds24</span></div>")
@@ -1045,6 +1127,16 @@ class CryRepository private constructor(
                 AppLang.EL -> "${feedHours}ω ${feedMinutes}λ"
             }
             sb.append("<div class=\"row\"><span>${trS("Χρόνος ταΐσματος τελευταίου 24ώρου")}</span><span>$feedDuration</span></div>")
+        }
+        sb.append("<div class=\"row\"><span>${trS("Ύπνοι τελευταίου 24ώρου")}</span><span>$sleeps24</span></div>")
+        if (sleepDuration24 > 0L) {
+            val sleepHours = sleepDuration24 / 3_600_000L
+            val sleepMinutes = (sleepDuration24 % 3_600_000L) / 60_000L
+            val sleepDuration = when (lang) {
+                AppLang.EN -> "${sleepHours}h ${sleepMinutes}m"
+                AppLang.EL -> "${sleepHours}ω ${sleepMinutes}λ"
+            }
+            sb.append("<div class=\"row\"><span>${trS("Χρόνος ύπνου τελευταίου 24ώρου")}</span><span>$sleepDuration</span></div>")
         }
         sb.append("<div class=\"row\"><span>${trS("Πάνες τελευταίου 24ώρου")}</span><span>$diapers24 (${trS("κακά")}: $poops24)</span></div>")
         sb.append("<div class=\"row\"><span>${trS("Tummy time τελευταίου 24ώρου")}</span><span>$tummy24</span></div>")
@@ -1064,7 +1156,7 @@ class CryRepository private constructor(
             val peakHour = perHour.indexOf(perHour.maxOrNull() ?: 0)
             val busiestDow = perDow.indexOf(perDow.maxOrNull() ?: 0)
             val firstTs = cries.minOf { it.timestamp }
-            val daysTracked = (((System.currentTimeMillis() - firstTs) / 86_400_000L) + 1).toInt().coerceAtLeast(1)
+            val daysTracked = calendarDaysTracked(firstTs, startOfToday())
             val avgPerDay = cries.size.toFloat() / daysTracked
             val dowNames = java.text.DateFormatSymbols(
                 if (lang == AppLang.EN) Locale.ENGLISH else Locale("el"),
@@ -1085,7 +1177,21 @@ class CryRepository private constructor(
             sb.append("<h2>${trS("Συνολική εικόνα")}</h2>")
             sb.append("<div class=\"row\"><span>${trS("Ημέρες καταγραφής")}</span><span>$daysTracked</span></div>")
             sb.append("<div class=\"row\"><span>${trS("Μέσος όρος κλαμάτων/ημέρα")}</span><span>${"%.1f".format(avgPerDay)}</span></div>")
-            val peakTxt = "%02d:00–%02d:00".format(peakHour, (peakHour + 1) % 24)
+            fun hour12Label(hour24: Int): String {
+                val h = ((hour24 % 24) + 24) % 24
+                val (hour12, isPm) = when {
+                    h == 0 -> 12 to false
+                    h == 12 -> 12 to true
+                    h > 12 -> (h - 12) to true
+                    else -> h to false
+                }
+                val period = when (lang) {
+                    AppLang.EN -> if (isPm) "PM" else "AM"
+                    AppLang.EL -> if (isPm) "μ.μ." else "π.μ."
+                }
+                return "$hour12:00 $period"
+            }
+            val peakTxt = "${hour12Label(peakHour)}–${hour12Label((peakHour + 1) % 24)}"
             sb.append("<div class=\"row\"><span>${trS("Ώρα αιχμής")}</span><span>$peakTxt</span></div>")
             sb.append("<div class=\"row\"><span>${trS("Πιο δύσκολη ημέρα")}</span><span>${esc(dowNames.getOrElse(busiestDow + 1) { "" })}</span></div>")
             if (avgFeedGapMs != null) {
@@ -1110,7 +1216,6 @@ class CryRepository private constructor(
             sb.append("<div class=\"axis\"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>")
 
             // Cries per day (last 14) - shows the trend over the past two weeks.
-            val dayMs = 86_400_000L
             cal.timeInMillis = System.currentTimeMillis()
             cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
             cal.set(java.util.Calendar.MINUTE, 0)
@@ -1119,8 +1224,9 @@ class CryRepository private constructor(
             val todayStart = cal.timeInMillis
             val dayFmt = SimpleDateFormat("d/M", if (lang == AppLang.EN) Locale.ENGLISH else Locale("el"))
             val perDay = (13 downTo 0).map { back ->
-                val start = todayStart - back * dayMs
-                dayFmt.format(Date(start)) to cries.count { it.timestamp in start until (start + dayMs) }
+                val start = shiftLocalDay(todayStart, -back)
+                val end = shiftLocalDay(start, 1)
+                dayFmt.format(Date(start)) to cries.count { it.timestamp in start until end }
             }
             val maxDay = (perDay.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
             sb.append("<h2>${trS("Κλάματα ανά ημέρα (τελευταίες 14)")}</h2>")
@@ -1134,16 +1240,9 @@ class CryRepository private constructor(
 
         // ---- Diapers: counts, poop frequency and the two-week trend. ----
         if (diapers.isNotEmpty()) {
-            val dayMs = 86_400_000L
-            val cal = java.util.Calendar.getInstance()
-            cal.timeInMillis = System.currentTimeMillis()
-            cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
-            cal.set(java.util.Calendar.MINUTE, 0)
-            cal.set(java.util.Calendar.SECOND, 0)
-            cal.set(java.util.Calendar.MILLISECOND, 0)
-            val todayStart = cal.timeInMillis
+            val todayStart = startOfToday()
             val firstTs = diapers.minOf { it.timestamp }
-            val daysTracked = (((System.currentTimeMillis() - firstTs) / dayMs) + 1).toInt().coerceAtLeast(1)
+            val daysTracked = calendarDaysTracked(firstTs, todayStart)
             val poops = diapers.count { DiaperType.fromNameOrNull(it.type)?.hasStool == true }
             val avgPerDay = diapers.size.toFloat() / daysTracked
             val poopsPerDay = poops.toFloat() / daysTracked
@@ -1156,8 +1255,9 @@ class CryRepository private constructor(
 
             val dayFmt = SimpleDateFormat("d/M", if (lang == AppLang.EN) Locale.ENGLISH else Locale("el"))
             val perDay = (13 downTo 0).map { back ->
-                val start = todayStart - back * dayMs
-                dayFmt.format(Date(start)) to diapers.count { it.timestamp in start until (start + dayMs) }
+                val start = shiftLocalDay(todayStart, -back)
+                val end = shiftLocalDay(start, 1)
+                dayFmt.format(Date(start)) to diapers.count { it.timestamp in start until end }
             }
             val maxDay = (perDay.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
             sb.append("<h2>${trS("Πάνες ανά ημέρα (τελευταίες 14)")}</h2>")
@@ -1169,18 +1269,51 @@ class CryRepository private constructor(
             sb.append("</div>")
         }
 
+        // ---- Sleep: totals and last-14-day trend. ----
+        val completedSleeps = sleeps.filter { it.durationMs > 0L }
+        if (completedSleeps.isNotEmpty()) {
+            val todayStart = startOfToday()
+            val firstTs = completedSleeps.minOf { it.timestamp }
+            val daysTracked = calendarDaysTracked(firstTs, todayStart)
+            val avgPerDay = completedSleeps.size.toFloat() / daysTracked
+            val totalDuration = completedSleeps.sumOf { it.durationMs }
+            val avgDuration = totalDuration / completedSleeps.size
+            val avgHours = avgDuration / 3_600_000L
+            val avgMinutes = (avgDuration % 3_600_000L) / 60_000L
+            val avgDurTxt = when (lang) {
+                AppLang.EN -> "${avgHours}h ${avgMinutes}m"
+                AppLang.EL -> "${avgHours}ω ${avgMinutes}λ"
+            }
+
+            sb.append("<h2>${trS("Ύπνος")}</h2>")
+            sb.append("<div class=\"row\"><span>${trS("Σύνολο συνεδριών")}</span><span>${completedSleeps.size}</span></div>")
+            sb.append("<div class=\"row\"><span>${trS("Μέσος όρος/ημέρα")}</span><span>${"%.1f".format(avgPerDay)}</span></div>")
+            sb.append("<div class=\"row\"><span>${trS("Μέση διάρκεια")}</span><span>$avgDurTxt</span></div>")
+
+            val dayFmt = SimpleDateFormat("d/M", if (lang == AppLang.EN) Locale.ENGLISH else Locale("el"))
+            val perDay = (13 downTo 0).map { back ->
+                val start = shiftLocalDay(todayStart, -back)
+                val end = shiftLocalDay(start, 1)
+                dayFmt.format(Date(start)) to completedSleeps.count {
+                    val sleepEnd = it.timestamp + it.durationMs
+                    it.timestamp < end && sleepEnd > start
+                }
+            }
+            val maxDay = (perDay.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
+            sb.append("<h2>${trS("Ύπνοι ανά ημέρα (τελευταίες 14)")}</h2>")
+            sb.append("<div class=\"days\">")
+            for ((label, count) in perDay) {
+                val hpx = (6 + 74.0 * count / maxDay).toInt()
+                sb.append("<div class=\"col\"><div class=\"cnt\">$count</div><div class=\"b\" style=\"height:${hpx}px\"></div><div class=\"lbl\">${esc(label)}</div></div>")
+            }
+            sb.append("</div>")
+        }
+
         // ---- Tummy time: totals, today vs age-goal and the two-week trend. ----
         if (tummy.isNotEmpty()) {
-            val dayMs = 86_400_000L
-            val cal = java.util.Calendar.getInstance()
-            cal.timeInMillis = System.currentTimeMillis()
-            cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
-            cal.set(java.util.Calendar.MINUTE, 0)
-            cal.set(java.util.Calendar.SECOND, 0)
-            cal.set(java.util.Calendar.MILLISECOND, 0)
-            val todayStart = cal.timeInMillis
+            val todayStart = startOfToday()
             val firstTs = tummy.minOf { it.timestamp }
-            val daysTracked = (((System.currentTimeMillis() - firstTs) / dayMs) + 1).toInt().coerceAtLeast(1)
+            val daysTracked = calendarDaysTracked(firstTs, todayStart)
             val avgPerDay = tummy.size.toFloat() / daysTracked
             val doneToday = tummy.count { it.timestamp >= todayStart }
             val goal = tummyDailyGoal()
@@ -1192,8 +1325,9 @@ class CryRepository private constructor(
 
             val dayFmt = SimpleDateFormat("d/M", if (lang == AppLang.EN) Locale.ENGLISH else Locale("el"))
             val perDay = (13 downTo 0).map { back ->
-                val start = todayStart - back * dayMs
-                dayFmt.format(Date(start)) to tummy.count { it.timestamp in start until (start + dayMs) }
+                val start = shiftLocalDay(todayStart, -back)
+                val end = shiftLocalDay(start, 1)
+                dayFmt.format(Date(start)) to tummy.count { it.timestamp in start until end }
             }
             val maxDay = (perDay.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
             sb.append("<h2>${trS("Tummy time ανά ημέρα (τελευταίες 14)")}</h2>")
@@ -1265,7 +1399,7 @@ class CryRepository private constructor(
 
         // Table of recent events
         sb.append("<h2>${trS("Καταγραφές")} (${cries.size})</h2>")
-        sb.append("<table><tr><th>${trS("Ώρα")}</th><th>${trS("Αιτία")}</th><th>${trS("Βεβαιότητα")}</th><th>${trS("Ανατροφοδότηση")}</th></tr>")
+        sb.append("<table><tr><th>${trS("Ώρα καταγραφής")}</th><th>${trS("Αιτία")}</th><th>${trS("Βεβαιότητα")}</th><th>${trS("Ανατροφοδότηση")}</th></tr>")
         for (e in cries.take(300)) {
             val pred = e.predictedIndex.takeIf { it in labels.indices }?.let { labels[it] }
             val predTxt = pred?.let { esc(it.emoji + " " + trS(it.displayName)) } ?: "—"
