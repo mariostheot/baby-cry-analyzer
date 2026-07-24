@@ -363,8 +363,33 @@ class CryRepository private constructor(
         feedingDao.insert(FeedingEvent(profileId = activeProfileId(), timestamp = System.currentTimeMillis(), note = note))
     }
 
-    suspend fun logDiaper(type: DiaperType) = withContext(Dispatchers.IO) {
-        diaperDao.insert(DiaperEvent(profileId = activeProfileId(), timestamp = System.currentTimeMillis(), type = type.name))
+    /**
+     * Logs a completed feeding in the past (e.g. from History when the parent forgot to start
+     * the live timer). Duration must be > 0; start cannot be in the future.
+     */
+    suspend fun logCompletedFeeding(
+        startedAt: Long,
+        durationMs: Long,
+        profileId: String = activeProfileId(),
+    ): Long = withContext(Dispatchers.IO) {
+        require(durationMs > 0L) { "Feeding duration must be positive." }
+        require(startedAt <= System.currentTimeMillis()) { "Feeding start cannot be in the future." }
+        feedingDao.insert(
+            FeedingEvent(
+                profileId = profileId,
+                timestamp = startedAt,
+                durationMs = durationMs,
+            ),
+        )
+    }
+
+    suspend fun logDiaper(
+        type: DiaperType,
+        timestamp: Long = System.currentTimeMillis(),
+        profileId: String = activeProfileId(),
+    ) = withContext(Dispatchers.IO) {
+        require(timestamp <= System.currentTimeMillis()) { "Diaper time cannot be in the future." }
+        diaperDao.insert(DiaperEvent(profileId = profileId, timestamp = timestamp, type = type.name))
     }
 
     suspend fun logTummy() = withContext(Dispatchers.IO) {
@@ -465,6 +490,26 @@ class CryRepository private constructor(
 
     suspend fun activeSleep(profileId: String = activeProfileId()): SleepEvent? =
         withContext(Dispatchers.IO) { sleepDao.inProgress(profileId) }
+
+    /**
+     * Logs a completed sleep in the past (e.g. from History when the parent forgot the live
+     * timer). Duration must be > 0; start cannot be in the future.
+     */
+    suspend fun logCompletedSleep(
+        startedAt: Long,
+        durationMs: Long,
+        profileId: String = activeProfileId(),
+    ): Long = withContext(Dispatchers.IO) {
+        require(durationMs > 0L) { "Sleep duration must be positive." }
+        require(startedAt <= System.currentTimeMillis()) { "Sleep start cannot be in the future." }
+        sleepDao.insert(
+            SleepEvent(
+                profileId = profileId,
+                timestamp = startedAt,
+                durationMs = durationMs,
+            ),
+        )
+    }
 
     // ---- Tummy time: age-based daily goal + reminder --------------------------
 

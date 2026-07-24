@@ -102,12 +102,16 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     var pendingDelete by remember { mutableStateOf<CryEvent?>(null) }
     var timelineFilter by remember { mutableStateOf(HistoryFilter.ALL) }
     var selectedDayStart by remember { mutableLongStateOf(Long.MIN_VALUE) }
+    var addKind by remember { mutableStateOf<HistoryAddKind?>(null) }
 
     // A measurement belongs to one baby. Do not leave an edit dialog open across a switch.
     // Also reset the selected day so Baby B does not inherit Baby A's day (often empty).
     LaunchedEffect(profile.id) {
         editWeight = null
         editHeight = null
+        editFeeding = null
+        editSleep = null
+        addKind = null
         selectedDayStart = Long.MIN_VALUE
     }
 
@@ -166,8 +170,22 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
 
         if (cries.isEmpty() && feedings.isEmpty() && sleeps.isEmpty() && diapers.isEmpty() && tummy.isEmpty()) {
             item {
-                Text(tr("Δεν υπάρχουν ακόμα καταγραφές. Πάτα «Άκου το μωρό» ή κατέγραψε ένα τάισμα ή ύπνο."))
+                Text(tr("Δεν υπάρχουν ακόμα καταγραφές. Πρόσθεσε τάισμα, πάνα ή ύπνο παρακάτω, ή πάτα «Άκου το μωρό»."))
             }
+            item {
+                DayNavigationBar(
+                    selectedDayStart = activeDayStart,
+                    todayStart = todayStart,
+                    onPrevious = { selectedDayStart = previousDayStart(activeDayStart) },
+                    onNext = {
+                        if (activeDayStart < todayStart) {
+                            selectedDayStart = minOf(nextDayStart(activeDayStart), todayStart)
+                        }
+                    },
+                    onToday = { selectedDayStart = todayStart },
+                )
+            }
+            item { DayAddCareBar(onAdd = { addKind = it }) }
         } else {
             item { LiveTiles(summary) }
             item {
@@ -184,6 +202,7 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                 )
             }
             item { DaySummaryCard(daySummary) }
+            item { DayAddCareBar(onAdd = { addKind = it }) }
             item {
                 HistoryFilterBar(
                     selected = timelineFilter,
@@ -616,10 +635,39 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
             },
         )
     }
-}
 
-@Composable
-private fun LiveTiles(s: HistorySummary) {
+    when (val kind = addKind) {
+        HistoryAddKind.FEED -> AddCompletedSessionDialog(
+            title = tr("Προσθήκη ταΐσματος"),
+            dayStart = activeDayStart,
+            defaultDurationMinutes = 15,
+            onDismiss = { addKind = null },
+            onSave = { startedAt, durationMs ->
+                viewModel.addCompletedFeeding(startedAt, durationMs)
+                addKind = null
+            },
+        )
+        HistoryAddKind.SLEEP -> AddCompletedSessionDialog(
+            title = tr("Προσθήκη ύπνου"),
+            dayStart = activeDayStart,
+            defaultDurationMinutes = 60,
+            onDismiss = { addKind = null },
+            onSave = { startedAt, durationMs ->
+                viewModel.addCompletedSleep(startedAt, durationMs)
+                addKind = null
+            },
+        )
+        HistoryAddKind.DIAPER -> AddDiaperOnDayDialog(
+            dayStart = activeDayStart,
+            onDismiss = { addKind = null },
+            onSave = { type, timestamp ->
+                viewModel.logDiaper(type, timestamp)
+                addKind = null
+            },
+        )
+        null -> Unit
+    }
+}
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             val overdue = s.nextFeedInMs != null && s.nextFeedInMs <= 0
@@ -706,6 +754,284 @@ private fun Tile(
 }
 
 @Composable
+private fun DayAddCareBar(onAdd: (HistoryAddKind) -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            tr("Προσθήκη στην ημέρα"),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(
+                onClick = { onAdd(HistoryAddKind.FEED) },
+                modifier = Modifier.weight(1f),
+            ) { Text("🍼 " + tr("Τάισμα"), maxLines = 1) }
+            OutlinedButton(
+                onClick = { onAdd(HistoryAddKind.DIAPER) },
+                modifier = Modifier.weight(1f),
+            ) { Text("🧷 " + tr("Πάνα"), maxLines = 1) }
+            OutlinedButton(
+                onClick = { onAdd(HistoryAddKind.SLEEP) },
+                modifier = Modifier.weight(1f),
+            ) { Text("😴 " + tr("Ύπνος"), maxLines = 1) }
+        }
+    }
+}
+
+/**
+ * Manual entry for a completed feed/sleep on [dayStart] (when the live timer was missed).
+ * Start defaults to now (if today) or 12:00; duration defaults to [defaultDurationMinutes].
+ */
+@Composable
+private fun AddCompletedSessionDialog(
+    title: String,
+    dayStart: Long,
+    defaultDurationMinutes: Int,
+    onDismiss: () -> Unit,
+    onSave: (startedAt: Long, durationMs: Long) -> Unit,
+) {
+    val now = System.currentTimeMillis()
+    val defaults = remember(dayStart, defaultDurationMinutes) {
+        defaultSessionTimes(dayStart, now, defaultDurationMinutes)
+    }
+    var startHourText by remember(dayStart) { mutableStateOf(defaults.startHour.toString()) }
+    var startMinuteText by remember(dayStart) { mutableStateOf(defaults.startMinute.toString().padStart(2, '0')) }
+    var endHourText by remember(dayStart) { mutableStateOf(defaults.endHour.toString()) }
+    var endMinuteText by remember(dayStart) { mutableStateOf(defaults.endMinute.toString().padStart(2, '0')) }
+
+    val startHour = startHourText.toIntOrNull()?.takeIf { it in 0..23 }
+    val startMinute = startMinuteText.toIntOrNull()?.takeIf { it in 0..59 }
+    val endHour = endHourText.toIntOrNull()?.takeIf { it in 0..23 }
+    val endMinute = endMinuteText.toIntOrNull()?.takeIf { it in 0..59 }
+
+    val startedAt = Calendar.getInstance().apply {
+        timeInMillis = dayStart
+        set(Calendar.HOUR_OF_DAY, startHour ?: 0)
+        set(Calendar.MINUTE, startMinute ?: 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val endSameDay = Calendar.getInstance().apply {
+        timeInMillis = dayStart
+        set(Calendar.HOUR_OF_DAY, endHour ?: 0)
+        set(Calendar.MINUTE, endMinute ?: 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val durationMs = (endSameDay - startedAt).let { if (it < 0L) it + 86_400_000L else it }
+    val endedAt = startedAt + durationMs
+    val timesOk = startHour != null && startMinute != null && endHour != null && endMinute != null
+    val notFuture = startedAt <= now && endedAt <= now
+    val onSelectedDay = startedAt >= dayStart && startedAt < nextDayStart(dayStart)
+    val valid = timesOk && durationMs > 0L && notFuture && onSelectedDay
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                Text(
+                    tr("Για όταν ξέχασες να πατήσεις έναρξη στην Αρχική. Βάλε ώρα έναρξης και λήξης."),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(tr("Ώρα έναρξης"), style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = startHourText,
+                        onValueChange = { startHourText = it.filter { c -> c.isDigit() }.take(2) },
+                        label = { Text(tr("Ώρα")) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = startMinuteText,
+                        onValueChange = { startMinuteText = it.filter { c -> c.isDigit() }.take(2) },
+                        label = { Text(tr("Λεπτά")) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(tr("Ώρα λήξης"), style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = endHourText,
+                        onValueChange = { endHourText = it.filter { c -> c.isDigit() }.take(2) },
+                        label = { Text(tr("Ώρα")) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = endMinuteText,
+                        onValueChange = { endMinuteText = it.filter { c -> c.isDigit() }.take(2) },
+                        label = { Text(tr("Λεπτά")) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                }
+                if (timesOk && !valid) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        when {
+                            !onSelectedDay -> tr("Η έναρξη πρέπει να είναι στην επιλεγμένη ημέρα.")
+                            durationMs <= 0L -> tr("Η λήξη πρέπει να είναι μετά την έναρξη.")
+                            else -> tr("Δεν μπορείς να καταγράψεις ώρα στο μέλλον.")
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(startedAt, durationMs) },
+                enabled = valid,
+            ) { Text(tr("Αποθήκευση")) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(tr("Άκυρο")) }
+        },
+    )
+}
+
+@Composable
+private fun AddDiaperOnDayDialog(
+    dayStart: Long,
+    onDismiss: () -> Unit,
+    onSave: (DiaperType, Long) -> Unit,
+) {
+    val now = System.currentTimeMillis()
+    val defaults = remember(dayStart) { defaultSessionTimes(dayStart, now, 0) }
+    var hourText by remember(dayStart) { mutableStateOf(defaults.startHour.toString()) }
+    var minuteText by remember(dayStart) { mutableStateOf(defaults.startMinute.toString().padStart(2, '0')) }
+    var selectedType by remember { mutableStateOf<DiaperType?>(null) }
+
+    val hour = hourText.toIntOrNull()?.takeIf { it in 0..23 }
+    val minute = minuteText.toIntOrNull()?.takeIf { it in 0..59 }
+    val timestamp = Calendar.getInstance().apply {
+        timeInMillis = dayStart
+        set(Calendar.HOUR_OF_DAY, hour ?: 0)
+        set(Calendar.MINUTE, minute ?: 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val timeOk = hour != null && minute != null
+    val valid = timeOk &&
+        selectedType != null &&
+        timestamp <= now &&
+        timestamp >= dayStart &&
+        timestamp < nextDayStart(dayStart)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(tr("Προσθήκη πάνας")) },
+        text = {
+            Column {
+                Text(tr("Ώρα"), style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = hourText,
+                        onValueChange = { hourText = it.filter { c -> c.isDigit() }.take(2) },
+                        label = { Text(tr("Ώρα")) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = minuteText,
+                        onValueChange = { minuteText = it.filter { c -> c.isDigit() }.take(2) },
+                        label = { Text(tr("Λεπτά")) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(tr("Τι είχε η πάνα;"), style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(6.dp))
+                DiaperType.entries.forEach { t ->
+                    OutlinedButton(
+                        onClick = { selectedType = t },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                    ) {
+                        Text(
+                            (if (selectedType == t) "✓ " else "") + "${t.emoji}  ${tr(t.displayName)}",
+                            maxLines = 1,
+                        )
+                    }
+                }
+                if (timeOk && selectedType != null && !valid) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        tr("Δεν μπορείς να καταγράψεις ώρα στο μέλλον."),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val type = selectedType ?: return@TextButton
+                    onSave(type, timestamp)
+                },
+                enabled = valid,
+            ) { Text(tr("Αποθήκευση")) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(tr("Άκυρο")) }
+        },
+    )
+}
+
+private data class DefaultSessionTimes(
+    val startHour: Int,
+    val startMinute: Int,
+    val endHour: Int,
+    val endMinute: Int,
+)
+
+private fun defaultSessionTimes(dayStart: Long, now: Long, durationMinutes: Int): DefaultSessionTimes {
+    val durationMs = durationMinutes.coerceAtLeast(0) * 60_000L
+    val start = Calendar.getInstance()
+    val end = Calendar.getInstance()
+    if (startOfDay(now) == dayStart) {
+        // Today: end at "now", start durationMinutes earlier (so defaults stay valid).
+        end.timeInMillis = now
+        start.timeInMillis = (now - durationMs).coerceAtLeast(dayStart)
+    } else {
+        start.timeInMillis = dayStart
+        start.set(Calendar.HOUR_OF_DAY, 12)
+        start.set(Calendar.MINUTE, 0)
+        end.timeInMillis = start.timeInMillis + durationMs
+    }
+    start.set(Calendar.SECOND, 0)
+    start.set(Calendar.MILLISECOND, 0)
+    end.set(Calendar.SECOND, 0)
+    end.set(Calendar.MILLISECOND, 0)
+    return DefaultSessionTimes(
+        startHour = start.get(Calendar.HOUR_OF_DAY),
+        startMinute = start.get(Calendar.MINUTE),
+        endHour = end.get(Calendar.HOUR_OF_DAY),
+        endMinute = end.get(Calendar.MINUTE),
+    )
+}
+
+@Composable
 private fun DayNavigationBar(
     selectedDayStart: Long,
     todayStart: Long,
@@ -757,6 +1083,8 @@ private fun DayNavigationBar(
         }
     }
 }
+
+private enum class HistoryAddKind { FEED, SLEEP, DIAPER }
 
 private enum class HistoryFilter(val label: String, val emoji: String) {
     ALL("Όλα", "•"),

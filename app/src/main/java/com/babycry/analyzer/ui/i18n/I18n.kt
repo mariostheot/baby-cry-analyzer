@@ -171,6 +171,20 @@ private val EN: Map<String, String> = mapOf(
     "Καθαρισμός" to "Clear",
     "Δεν υπάρχουν ακόμα καταγραφές. Πάτα «Άκου το μωρό» ή κατέγραψε ένα τάισμα ή ύπνο." to
         "No records yet. Tap \"Listen to baby\" or log a feeding or sleep.",
+    "Δεν υπάρχουν ακόμα καταγραφές. Πρόσθεσε τάισμα, πάνα ή ύπνο παρακάτω, ή πάτα «Άκου το μωρό»." to
+        "No records yet. Add a feeding, diaper, or sleep below, or tap \"Listen to baby\".",
+    "Προσθήκη στην ημέρα" to "Add to this day",
+    "Προσθήκη ταΐσματος" to "Add feeding",
+    "Προσθήκη ύπνου" to "Add sleep",
+    "Προσθήκη πάνας" to "Add diaper",
+    "Για όταν ξέχασες να πατήσεις έναρξη στην Αρχική. Βάλε ώρα έναρξης και λήξης." to
+        "For when you forgot to tap start on Home. Enter start and end times.",
+    "Η έναρξη πρέπει να είναι στην επιλεγμένη ημέρα." to "Start time must be on the selected day.",
+    "Η λήξη πρέπει να είναι μετά την έναρξη." to "End time must be after the start.",
+    "Δεν μπορείς να καταγράψεις ώρα στο μέλλον." to "You can't log a time in the future.",
+    "Τι είχε η πάνα;" to "What was in the diaper?",
+    "Καταγράφηκε ο ύπνος." to "Sleep logged.",
+    "Σφάλμα" to "Error",
     "Χρονολόγιο" to "Timeline",
     "Πάτησε μια καταγραφή για να ορίσεις/διορθώσεις την αιτία." to
         "Tap a record to set or correct the cause.",

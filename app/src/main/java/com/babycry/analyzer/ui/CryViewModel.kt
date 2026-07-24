@@ -482,6 +482,33 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Add a completed feeding for a past (or earlier today) time — used from History. */
+    fun addCompletedFeeding(startedAt: Long, durationMs: Long) {
+        viewModelScope.launch {
+            runCatching { repo.logCompletedFeeding(startedAt, durationMs) }
+                .onSuccess {
+                    _home.update { it.copy(message = trS("Καταγράφηκε το τάισμα.")) }
+                    scheduleFeedReminder()
+                }
+                .onFailure { t ->
+                    _home.update { it.copy(message = t.message ?: trS("Σφάλμα")) }
+                }
+        }
+    }
+
+    /** Add a completed sleep for a past (or earlier today) time — used from History. */
+    fun addCompletedSleep(startedAt: Long, durationMs: Long) {
+        viewModelScope.launch {
+            runCatching { repo.logCompletedSleep(startedAt, durationMs) }
+                .onSuccess {
+                    _home.update { it.copy(message = trS("Καταγράφηκε ο ύπνος.")) }
+                }
+                .onFailure { t ->
+                    _home.update { it.copy(message = t.message ?: trS("Σφάλμα")) }
+                }
+        }
+    }
+
     /**
      * The Home sleep button starts/stops one session for the selected baby. The session lives
      * in Room from the first tap, so its timer can be restored after an app restart.
@@ -564,10 +591,15 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         _feeding.value = FeedingUiState()
     }
 
-    fun logDiaper(type: DiaperType) {
+    fun logDiaper(type: DiaperType, timestamp: Long = System.currentTimeMillis()) {
         viewModelScope.launch {
-            repo.logDiaper(type)
-            _home.update { it.copy(message = trS("Καταγράφηκε η αλλαγή πάνας.")) }
+            runCatching { repo.logDiaper(type, timestamp) }
+                .onSuccess {
+                    _home.update { it.copy(message = trS("Καταγράφηκε η αλλαγή πάνας.")) }
+                }
+                .onFailure { t ->
+                    _home.update { it.copy(message = t.message ?: trS("Σφάλμα")) }
+                }
         }
     }
 
