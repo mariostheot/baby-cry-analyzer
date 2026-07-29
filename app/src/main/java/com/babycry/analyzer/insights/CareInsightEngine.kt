@@ -312,22 +312,26 @@ object CareInsightEngine {
         zone: TimeZone,
     ): CareInsight? {
         val diapers = input.diapers
-        val recentStool = diapers.filter {
-            it.hasStool && it.timestamp >= nowMs - CareInsightThresholds.RECENT_DAYS * 86_400_000L
-        }
-        val previousStool = diapers.filter {
-            it.hasStool &&
-                it.timestamp in (nowMs - CareInsightThresholds.COMPARISON_DAYS * 86_400_000L) until
-                (nowMs - CareInsightThresholds.RECENT_DAYS * 86_400_000L)
-        }
-        val recentWet = diapers.filter {
-            it.isWet && it.timestamp >= nowMs - CareInsightThresholds.RECENT_DAYS * 86_400_000L
-        }
-        val previousWet = diapers.filter {
-            it.isWet &&
-                it.timestamp in (nowMs - CareInsightThresholds.COMPARISON_DAYS * 86_400_000L) until
-                (nowMs - CareInsightThresholds.RECENT_DAYS * 86_400_000L)
-        }
+        fun inPeriod(isMatching: (CareDiaperRecord) -> Boolean, startDaysBack: Int, endDaysBack: Int) =
+            CareInsightTime.eventsInDayRange(
+                diapers.filter(isMatching).map { it.timestamp },
+                nowMs,
+                daysBackStart = startDaysBack,
+                daysBackEnd = endDaysBack,
+                zone = zone,
+            )
+        val recentStool = inPeriod(CareDiaperRecord::hasStool, 0, CareInsightThresholds.RECENT_DAYS)
+        val previousStool = inPeriod(
+            CareDiaperRecord::hasStool,
+            CareInsightThresholds.RECENT_DAYS,
+            CareInsightThresholds.COMPARISON_DAYS,
+        )
+        val recentWet = inPeriod(CareDiaperRecord::isWet, 0, CareInsightThresholds.RECENT_DAYS)
+        val previousWet = inPeriod(
+            CareDiaperRecord::isWet,
+            CareInsightThresholds.RECENT_DAYS,
+            CareInsightThresholds.COMPARISON_DAYS,
+        )
 
         data class Candidate(val metric: String, val recent: Float, val previous: Float, val count: Int)
 
@@ -391,11 +395,21 @@ object CareInsightEngine {
         zone: TimeZone,
     ): CareInsight? {
         val sleeps = input.sleeps
-        val recent = sleeps.filter { it.endedAt() >= nowMs - CareInsightThresholds.RECENT_DAYS * 86_400_000L }
-        val previous = sleeps.filter {
-            it.endedAt() in (nowMs - CareInsightThresholds.COMPARISON_DAYS * 86_400_000L) until
-                (nowMs - CareInsightThresholds.RECENT_DAYS * 86_400_000L)
+        fun sleepsInPeriod(startDaysBack: Int, endDaysBack: Int): List<CareSleepRecord> {
+            val endedAt = CareInsightTime.eventsInDayRange(
+                sleeps.map { it.endedAt() },
+                nowMs,
+                daysBackStart = startDaysBack,
+                daysBackEnd = endDaysBack,
+                zone = zone,
+            ).toSet()
+            return sleeps.filter { it.endedAt() in endedAt }
         }
+        val recent = sleepsInPeriod(0, CareInsightThresholds.RECENT_DAYS)
+        val previous = sleepsInPeriod(
+            CareInsightThresholds.RECENT_DAYS,
+            CareInsightThresholds.COMPARISON_DAYS,
+        )
         if (recent.size < CareInsightThresholds.MIN_SLEEPS_PER_PERIOD ||
             previous.size < CareInsightThresholds.MIN_SLEEPS_PER_PERIOD
         ) {

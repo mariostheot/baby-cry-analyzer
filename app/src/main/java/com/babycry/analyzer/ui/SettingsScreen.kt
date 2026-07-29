@@ -87,9 +87,10 @@ fun SettingsScreen(
         backupRecordings = viewModel.backupRecordingCount()
     }
 
-    var name by remember(profile) { mutableStateOf(profile.name) }
-    var birth by remember(profile) { mutableStateOf(profile.birthMillis) }
-    var gender by remember(profile) { mutableStateOf(profile.gender) }
+    // Draft fields belong to the selected baby, not to every profile refresh (e.g. colic toggle).
+    var name by remember(profile.id) { mutableStateOf(profile.name) }
+    var birth by remember(profile.id) { mutableStateOf(profile.birthMillis) }
+    var gender by remember(profile.id) { mutableStateOf(profile.gender) }
     var showPicker by remember { mutableStateOf(false) }
     var justSaved by remember(profile.id) { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<Confirm?>(null) }
@@ -317,28 +318,28 @@ fun SettingsScreen(
                     ActionRow(
                         Icons.Filled.Schedule,
                         tr("Πρωινή υπενθύμιση"),
-                        formatHour12(tummyReminderHourAm),
+                        formatHour24(tummyReminderHourAm),
                     ) {
                         android.app.TimePickerDialog(
                             context,
                             { _, h, _ -> viewModel.setTummyReminderHourAm(h) },
                             tummyReminderHourAm,
                             0,
-                            false,
+                            true,
                         ).show()
                     }
                     Divider(Modifier.padding(vertical = 8.dp))
                     ActionRow(
                         Icons.Filled.Schedule,
                         tr("Απογευματινή υπενθύμιση"),
-                        formatHour12(tummyReminderHourPm),
+                        formatHour24(tummyReminderHourPm),
                     ) {
                         android.app.TimePickerDialog(
                             context,
                             { _, h, _ -> viewModel.setTummyReminderHourPm(h) },
                             tummyReminderHourPm,
                             0,
-                            false,
+                            true,
                         ).show()
                     }
                 }
@@ -582,7 +583,7 @@ private fun backupHealthText(lastBackupAt: Long, recordings: Int): String {
         }
     } else {
         val fmt = SimpleDateFormat("d/M", if (currentAppLang == AppLang.EN) Locale.ENGLISH else Locale("el"))
-        "${fmt.format(Date(lastBackupAt))} ${formatTime12(lastBackupAt)}"
+        "${fmt.format(Date(lastBackupAt))} ${formatTime24(lastBackupAt)}"
     }
     return when (currentAppLang) {
         AppLang.EN -> "Last backup: $last • includes $recordings recordings"

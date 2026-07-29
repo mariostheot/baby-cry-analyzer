@@ -54,6 +54,7 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val diapers by viewModel.recentDiapers.collectAsState()
     val tummy by viewModel.recentTummy.collectAsState()
     val careInsights by viewModel.careInsights.collectAsState()
+    val midnightTick = rememberMidnightTick()
 
     LaunchedEffect(language, profile.id, events, feedbackCount) { stats = viewModel.loadStats() }
 
@@ -131,6 +132,7 @@ fun StatsScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
             sleeps = sleeps,
             diapers = diapers,
             tummy = tummy,
+            dayTick = midnightTick,
         )
 
         Spacer(Modifier.height(18.dp))
@@ -194,13 +196,14 @@ private fun BabyDayTimelineCard(
     sleeps: List<SleepEvent>,
     diapers: List<DiaperEvent>,
     tummy: List<TummyTimeEvent>,
+    dayTick: Long,
 ) {
     SectionHeader(
         tr("Ημέρα του μωρού"),
         tr("Μια γρήγορη γραμμή με τα σημερινά κλάματα, ταΐσματα, ύπνους, πάνες και tummy time."),
     )
     Spacer(Modifier.height(8.dp))
-    val todayStart = startOfToday()
+    val todayStart = startOfToday(dayTick)
     val now = System.currentTimeMillis()
     val todayEnd = nextLocalMidnight(todayStart)
     val items = buildList {
@@ -277,7 +280,8 @@ private fun SectionHeader(title: String, subtitle: String) {
 
 private data class TimelineDot(val timestamp: Long, val emoji: String, val label: String)
 
-private fun startOfToday(): Long = Calendar.getInstance().apply {
+private fun startOfToday(now: Long = System.currentTimeMillis()): Long = Calendar.getInstance().apply {
+    timeInMillis = now
     set(Calendar.HOUR_OF_DAY, 0)
     set(Calendar.MINUTE, 0)
     set(Calendar.SECOND, 0)
@@ -312,7 +316,7 @@ private fun displayTimeToday(
     return end.coerceAtLeast(dayStart)
 }
 
-private fun hourMinute(ts: Long): String = formatTime12(ts)
+private fun hourMinute(ts: Long): String = formatTime24(ts)
 
 @Composable
 private fun Caption(text: String) {

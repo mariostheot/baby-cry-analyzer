@@ -81,13 +81,13 @@ private fun dayShortFormat() = SimpleDateFormat("EEE", displayLocale())
 
 @Composable
 fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
-    val events by viewModel.recentEvents.collectAsState()
-    val feedings by viewModel.recentFeedings.collectAsState()
-    val sleeps by viewModel.recentSleep.collectAsState()
-    val diapers by viewModel.recentDiapers.collectAsState()
-    val tummy by viewModel.recentTummy.collectAsState()
-    val weights by viewModel.recentWeights.collectAsState()
-    val heights by viewModel.recentHeights.collectAsState()
+    val events by viewModel.historyEvents.collectAsState()
+    val feedings by viewModel.historyFeedings.collectAsState()
+    val sleeps by viewModel.historySleep.collectAsState()
+    val diapers by viewModel.historyDiapers.collectAsState()
+    val tummy by viewModel.historyTummy.collectAsState()
+    val weights by viewModel.historyWeights.collectAsState()
+    val heights by viewModel.historyHeights.collectAsState()
     val profile by viewModel.profile.collectAsState()
     val labels = viewModel.labels
     val language by viewModel.language.collectAsState()
@@ -123,6 +123,13 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     val now = System.currentTimeMillis()
     val nowTick = rememberMidnightTick()
     val todayStart = startOfDay(nowTick)
+    // Keep a day that was "Today" selected as the date rolls over, without
+    // advancing a deliberately selected older day.
+    LaunchedEffect(todayStart) {
+        if (selectedDayStart == previousDayStart(todayStart)) {
+            selectedDayStart = todayStart
+        }
+    }
     val cries = remember(events) { events.filter { it.cryDetected } }
     val summary = remember(events, feedings, sleeps, diapers, tummy, profile, language, nowTick) {
         computeSummary(cries, feedings, sleeps, diapers, tummy, labels, profile, System.currentTimeMillis())
@@ -382,11 +389,11 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
         val isRunning = feeding.durationMs < 0L
         val dayStart = startOfDay(feeding.timestamp)
         var startTime by remember(feeding.id, feeding.timestamp) {
-            mutableStateOf(ClockTime12.fromMillis(feeding.timestamp))
+            mutableStateOf(ClockTime24.fromMillis(feeding.timestamp))
         }
         var endTime by remember(feeding.id, feeding.timestamp, feeding.durationMs) {
             mutableStateOf(
-                ClockTime12.fromMillis(feeding.timestamp + feeding.durationMs.coerceAtLeast(0L)),
+                ClockTime24.fromMillis(feeding.timestamp + feeding.durationMs.coerceAtLeast(0L)),
             )
         }
         val updatedStartedAt = if (startTime.isValid) atDayTime(dayStart, startTime) else feeding.timestamp
@@ -409,13 +416,13 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                     )
                 } else {
                     Column {
-                        Time12Row(
+                        Time24Row(
                             label = tr("Ώρα έναρξης"),
                             time = startTime,
                             onTimeChange = { startTime = it },
                         )
                         Spacer(Modifier.height(12.dp))
-                        Time12Row(
+                        Time24Row(
                             label = tr("Ώρα λήξης"),
                             time = endTime,
                             onTimeChange = { endTime = it },
@@ -443,7 +450,15 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                 }
             },
             dismissButton = {
-                TextButton(onClick = { editFeeding = null }) { Text(tr("Κλείσιμο")) }
+                Row {
+                    if (!isRunning) {
+                        TextButton(onClick = {
+                            viewModel.deleteFeeding(feeding.id)
+                            editFeeding = null
+                        }) { Text(tr("Διαγραφή")) }
+                    }
+                    TextButton(onClick = { editFeeding = null }) { Text(tr("Κλείσιμο")) }
+                }
             },
         )
     }
@@ -452,11 +467,11 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
         val isRunning = sleepEvent.durationMs < 0L
         val dayStart = startOfDay(sleepEvent.timestamp)
         var startTime by remember(sleepEvent.id, sleepEvent.timestamp) {
-            mutableStateOf(ClockTime12.fromMillis(sleepEvent.timestamp))
+            mutableStateOf(ClockTime24.fromMillis(sleepEvent.timestamp))
         }
         var endTime by remember(sleepEvent.id, sleepEvent.timestamp, sleepEvent.durationMs) {
             mutableStateOf(
-                ClockTime12.fromMillis(sleepEvent.timestamp + sleepEvent.durationMs.coerceAtLeast(0L)),
+                ClockTime24.fromMillis(sleepEvent.timestamp + sleepEvent.durationMs.coerceAtLeast(0L)),
             )
         }
         val updatedStartedAt = if (startTime.isValid) atDayTime(dayStart, startTime) else sleepEvent.timestamp
@@ -478,13 +493,13 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                     )
                 } else {
                     Column {
-                        Time12Row(
+                        Time24Row(
                             label = tr("Ώρα έναρξης"),
                             time = startTime,
                             onTimeChange = { startTime = it },
                         )
                         Spacer(Modifier.height(12.dp))
-                        Time12Row(
+                        Time24Row(
                             label = tr("Ώρα λήξης"),
                             time = endTime,
                             onTimeChange = { endTime = it },
@@ -512,7 +527,15 @@ fun HistoryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
                 }
             },
             dismissButton = {
-                TextButton(onClick = { editSleep = null }) { Text(tr("Κλείσιμο")) }
+                Row {
+                    if (!isRunning) {
+                        TextButton(onClick = {
+                            viewModel.deleteSleep(sleepEvent.id)
+                            editSleep = null
+                        }) { Text(tr("Διαγραφή")) }
+                    }
+                    TextButton(onClick = { editSleep = null }) { Text(tr("Κλείσιμο")) }
+                }
             },
         )
     }
@@ -785,7 +808,7 @@ private fun DayAddCareBar(onAdd: (HistoryAddKind) -> Unit) {
 
 /**
  * Manual entry for a completed feed/sleep on [dayStart] (when the live timer was missed).
- * Times use 12-hour π.μ./μ.μ. Duration defaults to [defaultDurationMinutes].
+ * Times use a 24-hour clock. Duration defaults to [defaultDurationMinutes].
  */
 @Composable
 private fun AddCompletedSessionDialog(
@@ -800,10 +823,10 @@ private fun AddCompletedSessionDialog(
         defaultSessionTimes(dayStart, now, defaultDurationMinutes)
     }
     var startTime by remember(dayStart) {
-        mutableStateOf(ClockTime12.fromHour24(defaults.startHour, defaults.startMinute))
+        mutableStateOf(ClockTime24.fromHour24(defaults.startHour, defaults.startMinute))
     }
     var endTime by remember(dayStart) {
-        mutableStateOf(ClockTime12.fromHour24(defaults.endHour, defaults.endMinute))
+        mutableStateOf(ClockTime24.fromHour24(defaults.endHour, defaults.endMinute))
     }
 
     val startedAt = if (startTime.isValid) atDayTime(dayStart, startTime) else 0L
@@ -826,13 +849,13 @@ private fun AddCompletedSessionDialog(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
                 Spacer(Modifier.height(12.dp))
-                Time12Row(
+                Time24Row(
                     label = tr("Ώρα έναρξης"),
                     time = startTime,
                     onTimeChange = { startTime = it },
                 )
                 Spacer(Modifier.height(12.dp))
-                Time12Row(
+                Time24Row(
                     label = tr("Ώρα λήξης"),
                     time = endTime,
                     onTimeChange = { endTime = it },
@@ -874,14 +897,14 @@ private fun AddDiaperOnDayDialog(
     val now = System.currentTimeMillis()
     val defaults = remember(dayStart, initial?.id) {
         if (initial != null) {
-            val c = ClockTime12.fromMillis(initial.timestamp)
+            val c = ClockTime24.fromMillis(initial.timestamp)
             DefaultSessionTimes(c.hour24, c.minute, c.hour24, c.minute)
         } else {
             defaultSessionTimes(dayStart, now, 0)
         }
     }
     var clock by remember(dayStart, initial?.id) {
-        mutableStateOf(ClockTime12.fromHour24(defaults.startHour, defaults.startMinute))
+        mutableStateOf(ClockTime24.fromHour24(defaults.startHour, defaults.startMinute))
     }
     var selectedType by remember(initial?.id) {
         mutableStateOf(initial?.let { DiaperType.fromNameOrNull(it.type) })
@@ -899,7 +922,7 @@ private fun AddDiaperOnDayDialog(
         title = { Text(tr(if (initial == null) "Προσθήκη πάνας" else "Επεξεργασία πάνας")) },
         text = {
             Column {
-                Time12Row(
+                Time24Row(
                     label = tr("Ώρα"),
                     time = clock,
                     onTimeChange = { clock = it },
@@ -962,14 +985,14 @@ private fun AddTimedOnDayDialog(
     val now = System.currentTimeMillis()
     val defaults = remember(dayStart, initialTimestamp) {
         if (initialTimestamp != null) {
-            val c = ClockTime12.fromMillis(initialTimestamp)
+            val c = ClockTime24.fromMillis(initialTimestamp)
             DefaultSessionTimes(c.hour24, c.minute, c.hour24, c.minute)
         } else {
             defaultSessionTimes(dayStart, now, 0)
         }
     }
     var clock by remember(dayStart, initialTimestamp) {
-        mutableStateOf(ClockTime12.fromHour24(defaults.startHour, defaults.startMinute))
+        mutableStateOf(ClockTime24.fromHour24(defaults.startHour, defaults.startMinute))
     }
     val timestamp = if (clock.isValid) atDayTime(dayStart, clock) else 0L
     val valid = clock.isValid &&
@@ -988,7 +1011,7 @@ private fun AddTimedOnDayDialog(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
                 Spacer(Modifier.height(12.dp))
-                Time12Row(
+                Time24Row(
                     label = tr("Ώρα"),
                     time = clock,
                     onTimeChange = { clock = it },
@@ -1029,7 +1052,7 @@ private data class DefaultSessionTimes(
 
 private fun defaultInstantOnDay(dayStart: Long, now: Long): Long {
     val t = defaultSessionTimes(dayStart, now, 0)
-    return atDayTime(dayStart, ClockTime12.fromHour24(t.startHour, t.startMinute))
+    return atDayTime(dayStart, ClockTime24.fromHour24(t.startHour, t.startMinute))
 }
 
 private fun defaultSessionTimes(dayStart: Long, now: Long, durationMinutes: Int): DefaultSessionTimes {
@@ -1263,7 +1286,7 @@ private fun TimelineRowShell(
         verticalAlignment = Alignment.Top,
     ) {
         Text(
-            formatTime12(timestamp),
+            formatTime24(timestamp),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
             modifier = Modifier
@@ -1345,7 +1368,7 @@ private fun FeedTimelineRow(
     val metadata = when {
         isRunning -> tr("Το τάισμα είναι σε εξέλιξη")
         feeding.durationMs > 0L -> {
-            val endTime = formatTime12(feeding.timestamp + feeding.durationMs)
+            val endTime = formatTime24(feeding.timestamp + feeding.durationMs)
             "${feedingDurationText(feeding.durationMs)} · $endTime"
         }
         else -> null
@@ -1374,7 +1397,7 @@ private fun SleepTimelineRow(
     val metadata = when {
         isRunning -> tr("Ο ύπνος είναι σε εξέλιξη")
         sleep.durationMs > 0L -> {
-            val endTime = formatTime12(sleep.timestamp + sleep.durationMs)
+            val endTime = formatTime24(sleep.timestamp + sleep.durationMs)
             "${sleepDurationText(sleep.durationMs)} · $endTime"
         }
         else -> null
@@ -1469,7 +1492,7 @@ private fun PatternsCard(s: HistorySummary) {
             Spacer(Modifier.height(8.dp))
             InsightLine(
                 tr("Ώρες αιχμής κλάματος"),
-                s.peakHour?.let { formatHourRange12(it, (it + 1) % 24) } ?: "—",
+                s.peakHour?.let { formatHourRange24(it, (it + 1) % 24) } ?: "—",
             )
             Spacer(Modifier.height(6.dp))
             InsightLine(
@@ -1588,7 +1611,7 @@ private fun HourHeatmap(perHour: List<Int>) {
         if (perHour.sum() > 0) {
             Spacer(Modifier.height(6.dp))
             Text(
-                "${tr("Ώρα αιχμής:")} ${formatHourRange12(peak, (peak + 1) % 24)}",
+                "${tr("Ώρα αιχμής:")} ${formatHourRange24(peak, (peak + 1) % 24)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
             )

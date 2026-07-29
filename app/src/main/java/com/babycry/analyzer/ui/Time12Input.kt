@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -23,8 +22,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.babycry.analyzer.ui.i18n.AppLang
-import com.babycry.analyzer.ui.i18n.currentAppLang
 import com.babycry.analyzer.ui.i18n.tr
 import java.util.Calendar
 import kotlinx.coroutines.delay
@@ -54,75 +51,42 @@ fun rememberMidnightTick(): Long {
     return tick
 }
 
-/** Localized π.μ./μ.μ. or AM/PM. */
-fun periodLabel(isPm: Boolean, lang: AppLang = currentAppLang): String = when (lang) {
-    AppLang.EN -> if (isPm) "PM" else "AM"
-    AppLang.EL -> if (isPm) "μ.μ." else "π.μ."
+/** Display a local time in 24-hour form, e.g. `15:05`. */
+fun formatTime24(millis: Long): String {
+    val t = ClockTime24.fromMillis(millis)
+    return "%02d:%02d".format(t.hour24, t.minute)
 }
 
-/** Display time as 12-hour with period, e.g. `3:05 μ.μ.` / `3:05 PM`. */
-fun formatTime12(millis: Long, lang: AppLang = currentAppLang): String {
-    val t = ClockTime12.fromMillis(millis)
-    return "%d:%02d %s".format(t.hour12, t.minute, periodLabel(t.isPm, lang))
-}
+/** Display an hour-only 24-hour clock, e.g. reminder slots. */
+fun formatHour24(hour24: Int): String = "%02d:00".format(hour24.coerceIn(0, 23))
 
-/** Display an hour-only clock (minutes zero), e.g. reminder slots. */
-fun formatHour12(hour24: Int, lang: AppLang = currentAppLang): String {
-    val t = ClockTime12.fromHour24(hour24, 0)
-    return "%d:00 %s".format(t.hour12, periodLabel(t.isPm, lang))
-}
-
-/** Display a closed hour range in 12-hour form. */
-fun formatHourRange12(startHour24: Int, endHour24: Int, lang: AppLang = currentAppLang): String {
-    val a = ClockTime12.fromHour24(startHour24, 0)
-    val b = ClockTime12.fromHour24(endHour24, 0)
-    return "%d:00 %s–%d:00 %s".format(
-        a.hour12, periodLabel(a.isPm, lang),
-        b.hour12, periodLabel(b.isPm, lang),
-    )
-}
+/** Display a closed hour range in 24-hour form. */
+fun formatHourRange24(startHour24: Int, endHour24: Int): String =
+    "${formatHour24(startHour24)}–${formatHour24(endHour24)}"
 
 /**
- * 12-hour clock time with π.μ./μ.μ. (AM/PM).
- * [hour12] must be 1..12 and [minute] 0..59 for [isValid]; use 0 / -1 as invalid sentinels while typing.
+ * 24-hour clock time. [hour24] must be 0..23 and [minute] 0..59 for [isValid];
+ * use -1 as an invalid sentinel while typing.
  */
-data class ClockTime12(
-    val hour12: Int,
+data class ClockTime24(
+    val hour24: Int,
     val minute: Int,
-    val isPm: Boolean,
 ) {
-    val isValid: Boolean get() = hour12 in 1..12 && minute in 0..59
-
-    /** 0..23 hour for Calendar.HOUR_OF_DAY. Only meaningful when [isValid]. */
-    val hour24: Int
-        get() = when {
-            hour12 == 12 && !isPm -> 0
-            hour12 == 12 && isPm -> 12
-            isPm -> hour12 + 12
-            else -> hour12
-        }
+    val isValid: Boolean get() = hour24 in 0..23 && minute in 0..59
 
     companion object {
-        fun fromHour24(hour24: Int, minute: Int): ClockTime12 {
-            val h = hour24.coerceIn(0, 23)
-            val m = minute.coerceIn(0, 59)
-            return when {
-                h == 0 -> ClockTime12(12, m, isPm = false)
-                h == 12 -> ClockTime12(12, m, isPm = true)
-                h > 12 -> ClockTime12(h - 12, m, isPm = true)
-                else -> ClockTime12(h, m, isPm = false)
-            }
-        }
+        fun fromHour24(hour24: Int, minute: Int): ClockTime24 =
+            ClockTime24(hour24.coerceIn(0, 23), minute.coerceIn(0, 59))
 
-        fun fromMillis(millis: Long): ClockTime12 {
+        fun fromMillis(millis: Long): ClockTime24 {
             val c = Calendar.getInstance().apply { timeInMillis = millis }
             return fromHour24(c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE))
         }
     }
 }
 
-/** Combines a local midnight [dayStart] with a 12-hour clock time. */
-fun atDayTime(dayStart: Long, time: ClockTime12): Long =
+/** Combines a local midnight [dayStart] with a 24-hour clock time. */
+fun atDayTime(dayStart: Long, time: ClockTime24): Long =
     Calendar.getInstance().apply {
         timeInMillis = dayStart
         set(Calendar.HOUR_OF_DAY, time.hour24)
@@ -132,23 +96,22 @@ fun atDayTime(dayStart: Long, time: ClockTime12): Long =
     }.timeInMillis
 
 /**
- * Hour (1–12) + minutes + π.μ./μ.μ. chips. Digits-only fields; period toggles via chips.
- * Clearing a field marks the clock invalid so callers can disable Save.
+ * 24-hour hour + minutes. Clearing a field marks the clock invalid so callers can disable Save.
  */
 @Composable
-fun Time12Row(
+fun Time24Row(
     label: String,
-    time: ClockTime12,
-    onTimeChange: (ClockTime12) -> Unit,
+    time: ClockTime24,
+    onTimeChange: (ClockTime24) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var hourText by remember { mutableStateOf(if (time.hour12 in 1..12) time.hour12.toString() else "") }
+    var hourText by remember { mutableStateOf(if (time.hour24 in 0..23) time.hour24.toString().padStart(2, '0') else "") }
     var minuteText by remember {
         mutableStateOf(if (time.minute in 0..59) time.minute.toString().padStart(2, '0') else "")
     }
-    LaunchedEffect(time.hour12, time.minute) {
-        if (time.hour12 in 1..12 && hourText.toIntOrNull() != time.hour12) {
-            hourText = time.hour12.toString()
+    LaunchedEffect(time.hour24, time.minute) {
+        if (time.hour24 in 0..23 && hourText.toIntOrNull() != time.hour24) {
+            hourText = time.hour24.toString().padStart(2, '0')
         }
         if (time.minute in 0..59 && minuteText.toIntOrNull() != time.minute) {
             minuteText = time.minute.toString().padStart(2, '0')
@@ -168,18 +131,18 @@ fun Time12Row(
                     val digits = raw.filter { it.isDigit() }.take(2)
                     hourText = digits
                     val h = digits.toIntOrNull()
-                    if (h != null && h in 1..12) {
-                        onTimeChange(time.copy(hour12 = h))
+                    if (h != null && h in 0..23) {
+                        onTimeChange(time.copy(hour24 = h))
                     } else {
-                        onTimeChange(time.copy(hour12 = 0))
+                        onTimeChange(time.copy(hour24 = -1))
                     }
                 },
                 label = { Text(tr("Ώρα")) },
-                placeholder = { Text("1–12") },
+                placeholder = { Text("0–23") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.width(88.dp),
                 singleLine = true,
-                isError = hourText.isBlank() || hourText.toIntOrNull()?.let { it !in 1..12 } == true,
+                isError = hourText.isBlank() || hourText.toIntOrNull()?.let { it !in 0..23 } == true,
             )
             OutlinedTextField(
                 value = minuteText,
@@ -198,16 +161,6 @@ fun Time12Row(
                 modifier = Modifier.width(88.dp),
                 singleLine = true,
                 isError = minuteText.isBlank() || minuteText.toIntOrNull()?.let { it !in 0..59 } == true,
-            )
-            FilterChip(
-                selected = !time.isPm,
-                onClick = { onTimeChange(time.copy(isPm = false)) },
-                label = { Text(tr("π.μ.")) },
-            )
-            FilterChip(
-                selected = time.isPm,
-                onClick = { onTimeChange(time.copy(isPm = true)) },
-                label = { Text(tr("μ.μ.")) },
             )
         }
     }

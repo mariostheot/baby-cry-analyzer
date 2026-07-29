@@ -183,8 +183,6 @@ private val EN: Map<String, String> = mapOf(
     "Βάλε την ώρα που έγινε, αν δεν το κατέγραψες τη στιγμή εκείνη." to
         "Enter the time it happened if you didn't log it then.",
     "Ώρα μέτρησης" to "Measurement time",
-    "π.μ." to "AM",
-    "μ.μ." to "PM",
     "Για όταν ξέχασες να πατήσεις έναρξη στην Αρχική. Βάλε ώρα έναρξης και λήξης." to
         "For when you forgot to tap start on Home. Enter start and end times.",
     "Η έναρξη πρέπει να είναι στην επιλεγμένη ημέρα." to "Start time must be on the selected day.",
@@ -438,10 +436,13 @@ private val EN: Map<String, String> = mapOf(
     "Άκουσα αλλά δεν ξεχώρισα καθαρό κλάμα. Δοκίμασε ξανά, πιο κοντά στο μωρό ή σε πιο ήσυχο χώρο." to
         "I heard something but couldn't pick out a clear cry. Try again, closer to baby or in a quieter room.",
     "Σφάλμα ανάλυσης:" to "Analysis error:",
+    "Σταμάτησε πρώτα την ακρόαση." to "Stop listening first.",
     "Καταγράφηκε το τάισμα." to "Feeding logged.",
     "Ενημερώθηκε η διάρκεια ταΐσματος." to "Feeding duration updated.",
     "Ενημερώθηκε το τάισμα." to "Feeding updated.",
+    "Διαγράφηκε το τάισμα." to "Feeding deleted.",
     "Ενημερώθηκε ο ύπνος." to "Sleep updated.",
+    "Διαγράφηκε ο ύπνος." to "Sleep deleted.",
     "Διάρκεια ταΐσματος" to "Feeding duration",
     "Επεξεργασία ταΐσματος" to "Edit feeding",
     "Επεξεργασία ύπνου" to "Edit sleep",

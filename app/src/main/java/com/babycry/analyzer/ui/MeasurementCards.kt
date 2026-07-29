@@ -56,7 +56,7 @@ fun WeightHistoryCard(
                 Spacer(Modifier.height(8.dp))
                 WeightLineChart(points = weights, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(12.dp))
-                val latest = weights.first()
+                val latest = weights.maxBy { it.timestamp }
                 Text(
                     tr("Τρέχον") + ": " + formatWeightKg(latest.grams),
                     style = MaterialTheme.typography.headlineSmall,
@@ -103,7 +103,7 @@ fun HeightHistoryCard(
                 Spacer(Modifier.height(8.dp))
                 HeightLineChart(points = heights, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(12.dp))
-                val latest = heights.first()
+                val latest = heights.maxBy { it.timestamp }
                 Text(
                     tr("Τρέχον ύψος") + ": " + formatHeightCm(latest.millimeters),
                     style = MaterialTheme.typography.headlineSmall,
@@ -320,7 +320,7 @@ fun WeightEntryDialog(
     }
     var clock by remember(initial?.id, initialTimestamp) {
         mutableStateOf(
-            ClockTime12.fromMillis(initial?.timestamp ?: initialTimestamp ?: System.currentTimeMillis()),
+            ClockTime24.fromMillis(initial?.timestamp ?: initialTimestamp ?: System.currentTimeMillis()),
         )
     }
     var showDatePicker by remember(initial?.id, initialTimestamp) { mutableStateOf(false) }
@@ -361,7 +361,7 @@ fun WeightEntryDialog(
                     Text(dateFmt.format(Date(timestampMillis)))
                 }
                 Spacer(Modifier.height(12.dp))
-                Time12Row(
+                Time24Row(
                     label = tr("Ώρα μέτρησης"),
                     time = clock,
                     onTimeChange = { clock = it },
@@ -399,9 +399,9 @@ fun WeightEntryDialog(
             initialDateMillis = timestampMillis,
             onDismiss = { showDatePicker = false },
             onConfirm = {
-                val keep = if (clock.isValid) clock else ClockTime12.fromMillis(timestampMillis)
+                val keep = if (clock.isValid) clock else ClockTime24.fromMillis(timestampMillis)
                 timestampMillis = atDayTime(it, keep)
-                clock = ClockTime12.fromMillis(timestampMillis)
+                clock = ClockTime24.fromMillis(timestampMillis)
                 showDatePicker = false
             },
             title = tr("Ημερομηνία μέτρησης"),
@@ -430,7 +430,7 @@ fun HeightEntryDialog(
     }
     var clock by remember(initial?.id, initialTimestamp) {
         mutableStateOf(
-            ClockTime12.fromMillis(initial?.timestamp ?: initialTimestamp ?: System.currentTimeMillis()),
+            ClockTime24.fromMillis(initial?.timestamp ?: initialTimestamp ?: System.currentTimeMillis()),
         )
     }
     var showDatePicker by remember(initial?.id, initialTimestamp) { mutableStateOf(false) }
@@ -471,7 +471,7 @@ fun HeightEntryDialog(
                     Text(dateFmt.format(Date(timestampMillis)))
                 }
                 Spacer(Modifier.height(12.dp))
-                Time12Row(
+                Time24Row(
                     label = tr("Ώρα μέτρησης"),
                     time = clock,
                     onTimeChange = { clock = it },
@@ -509,9 +509,9 @@ fun HeightEntryDialog(
             initialDateMillis = timestampMillis,
             onDismiss = { showDatePicker = false },
             onConfirm = {
-                val keep = if (clock.isValid) clock else ClockTime12.fromMillis(timestampMillis)
+                val keep = if (clock.isValid) clock else ClockTime24.fromMillis(timestampMillis)
                 timestampMillis = atDayTime(it, keep)
-                clock = ClockTime12.fromMillis(timestampMillis)
+                clock = ClockTime24.fromMillis(timestampMillis)
                 showDatePicker = false
             },
             title = tr("Ημερομηνία μέτρησης"),

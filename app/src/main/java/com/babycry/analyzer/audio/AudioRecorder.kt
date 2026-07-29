@@ -98,7 +98,9 @@ class AudioRecorder(private val sampleRate: Int = MfccExtractor.SAMPLE_RATE) {
                     SystemClock.elapsedRealtime() - lastEvalAt >= evalIntervalMs
                 ) {
                     lastEvalAt = SystemClock.elapsedRealtime()
+                    if (stopRequested.get()) break
                     if (shouldFinish(toFloat(chunks, totalSamples))) break
+                    if (stopRequested.get()) break
                 }
             }
 

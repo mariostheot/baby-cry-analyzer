@@ -70,7 +70,7 @@ fun LibraryScreen(viewModel: CryViewModel, modifier: Modifier = Modifier) {
     }
 
     val timeFmt = remember(language) {
-        { ts: Long -> formatTime12(ts) }
+        { ts: Long -> formatTime24(ts) }
     }
     val dayHeaderFmt = remember(language) {
         SimpleDateFormat("EEEE d/M", if (currentAppLang == AppLang.EN) Locale.ENGLISH else Locale("el"))

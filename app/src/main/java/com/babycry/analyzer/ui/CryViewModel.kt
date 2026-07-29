@@ -102,6 +102,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     private var feedingJob: Job? = null
     private var sleepJob: Job? = null
     private var lastWaveform: FloatArray? = null
+    private var listeningSession = 0L
 
     @Volatile
     private var cancelRequested = false
@@ -170,6 +171,28 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val recentHeights: StateFlow<List<HeightEvent>> = _profile.flatMapLatest { repo.recentHeights(it.id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // History deliberately observes every record. Home and Stats use the capped recent flows above.
+    val historyEvents: StateFlow<List<CryEvent>> = _profile.flatMapLatest { repo.historyEvents(it.id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val historyFeedings: StateFlow<List<FeedingEvent>> = _profile.flatMapLatest { repo.historyFeedings(it.id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val historyDiapers: StateFlow<List<DiaperEvent>> = _profile.flatMapLatest { repo.historyDiapers(it.id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val historyTummy: StateFlow<List<TummyTimeEvent>> = _profile.flatMapLatest { repo.historyTummy(it.id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val historySleep: StateFlow<List<SleepEvent>> = _profile.flatMapLatest { repo.historySleep(it.id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val historyWeights: StateFlow<List<WeightEvent>> = _profile.flatMapLatest { repo.historyWeights(it.id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val historyHeights: StateFlow<List<HeightEvent>> = _profile.flatMapLatest { repo.historyHeights(it.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // kotlinx-coroutines only offers typed combine() up to 5 flows, so fold the care
@@ -296,6 +319,8 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun startListening() {
+        val sessionId = ++listeningSession
+        val recordingProfileId = _profile.value.id
         cancelRequested = false
         stopSoothing() // don't let the soothing sound bleed into the recording
         player.stop()  // stop any in-progress replay so it doesn't overlap / leak into the mic
@@ -326,6 +351,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
                     },
                 )
             } catch (t: Throwable) {
+                if (sessionId != listeningSession) return@launch
                 _home.update {
                     HomeUiState(phase = Phase.IDLE, message = t.message ?: trS("Σφάλμα ηχογράφησης"))
                 }
@@ -333,7 +359,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             // User backed out mid-listen: drop the clip and go quietly back to idle.
-            if (cancelRequested) {
+            if (cancelRequested || sessionId != listeningSession) {
                 cancelRequested = false
                 _home.update { HomeUiState(phase = Phase.IDLE) }
                 return@launch
@@ -347,7 +373,11 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
                     personalizationEnabled = _personalizationEnabled.value,
                     contextEnabled = true,
                 )
-                val eventId = repo.saveEvent(analysis, waveform)
+                // A profile switch/notification may have invalidated this listening session
+                // while inference was running. Never save its result under a different baby.
+                if (sessionId != listeningSession) return@launch
+                val eventId = repo.saveEvent(analysis, waveform, recordingProfileId)
+                if (sessionId != listeningSession) return@launch
                 val noCry = !analysis.result.cryDetected
                 _home.update {
                     it.copy(
@@ -366,7 +396,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
                     ConfirmReminder.schedule(
                         getApplication<Application>(),
                         REMINDER_DELAY_MIN,
-                        repo.currentProfileId(),
+                        recordingProfileId,
                         eventId,
                     )
                 }
@@ -489,6 +519,15 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun deleteFeeding(eventId: Long) {
+        viewModelScope.launch {
+            if (repo.deleteFeeding(eventId)) {
+                scheduleFeedReminder()
+                _home.update { it.copy(message = trS("Διαγράφηκε το τάισμα.")) }
+            }
+        }
+    }
+
     /** Add a completed feeding for a past (or earlier today) time — used from History. */
     fun addCompletedFeeding(startedAt: Long, durationMs: Long) {
         viewModelScope.launch {
@@ -547,6 +586,14 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
                 .onFailure { t ->
                     _home.update { it.copy(message = t.message ?: trS("Σφάλμα")) }
                 }
+        }
+    }
+
+    fun deleteSleep(eventId: Long) {
+        viewModelScope.launch {
+            if (repo.deleteSleep(eventId)) {
+                _home.update { it.copy(message = trS("Διαγράφηκε ο ύπνος.")) }
+            }
         }
     }
 
@@ -820,6 +867,10 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Start a soothing sound; [minutes] == 0 means play until stopped. */
     fun playSoothing(type: SoundType, minutes: Int) {
+        if (_home.value.phase == Phase.RECORDING || _home.value.phase == Phase.ANALYZING) {
+            _home.update { it.copy(message = trS("Σταμάτησε πρώτα την ακρόαση.")) }
+            return
+        }
         player.stop() // don't overlap a cry replay with the soothing sound
         _playback.value = PlaybackUiState()
         soothingJob?.cancel()
@@ -856,6 +907,14 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
     /** Add a new (blank) baby and make it active; the parent fills details in Settings. */
     fun addBaby() {
         viewModelScope.launch {
+            val previousId = repo.currentProfileId()
+            clearHomeForProfileSwitch()
+            _pending.value = null
+            ConfirmReminder.cancelAllForProfile(
+                getApplication<Application>(),
+                previousId,
+                repo.pendingEventIds(previousId),
+            )
             repo.addProfile("", null)
             refreshProfiles()
             refreshActiveProfileState()
@@ -889,14 +948,28 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openPendingForBaby(id: String?, eventId: Long?) {
         viewModelScope.launch {
+            val previousId = repo.currentProfileId()
             clearHomeForProfileSwitch()
             _pending.value = null
             if (!id.isNullOrBlank() && repo.hasProfile(id)) {
+                if (previousId != id) {
+                    ConfirmReminder.cancelAllForProfile(
+                        getApplication<Application>(),
+                        previousId,
+                        repo.pendingEventIds(previousId),
+                    )
+                }
                 repo.setActiveProfile(id)
                 eventId?.takeIf { it > 0L }?.let { repo.focusPendingEvent(id, it) }
             }
             refreshProfiles()
             refreshActiveProfileState()
+            if (!id.isNullOrBlank() && repo.hasProfile(id)) {
+                val app = getApplication<Application>()
+                for (pendingId in repo.pendingEventIds(id)) {
+                    ConfirmReminder.schedule(app, REMINDER_DELAY_MIN, id, pendingId)
+                }
+            }
         }
     }
 
@@ -910,6 +983,7 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
             repo.deleteProfile(id)
             refreshProfiles()
             refreshActiveProfileState()
+            schedulePendingConfirmations()
         }
     }
 
@@ -918,10 +992,16 @@ class CryViewModel(app: Application) : AndroidViewModel(app) {
      * result card cannot disagree after a profile switch (and feedback cannot hit the wrong event).
      */
     private fun clearHomeForProfileSwitch() {
+        listeningSession++
         if (_home.value.phase == Phase.RECORDING) {
             cancelRequested = true
             recorder.stop()
         }
+        stopFeedingTimer()
+        stopSleepTimer()
+        player.stop()
+        _playback.value = PlaybackUiState()
+        stopSoothing()
         lastWaveform = null
         _home.value = HomeUiState(phase = Phase.IDLE)
     }

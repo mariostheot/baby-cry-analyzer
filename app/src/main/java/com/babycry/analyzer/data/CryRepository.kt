@@ -2,6 +2,7 @@ package com.babycry.analyzer.data
 
 import android.content.Context
 import android.util.Base64
+import androidx.room.withTransaction
 import com.babycry.analyzer.insights.CareCryRecord
 import com.babycry.analyzer.insights.CareDiaperRecord
 import com.babycry.analyzer.insights.CareFeedRecord
@@ -84,6 +85,15 @@ class CryRepository private constructor(
     fun recentWeights(profileId: String = activeProfileId()): Flow<List<WeightEvent>> = weightDao.recent(profileId)
     fun recentHeights(profileId: String = activeProfileId()): Flow<List<HeightEvent>> = heightDao.recent(profileId)
 
+    /** Complete profile histories used by the History screen; recent flows remain capped for live UI. */
+    fun historyEvents(profileId: String = activeProfileId()): Flow<List<CryEvent>> = cryDao.all(profileId)
+    fun historyFeedings(profileId: String = activeProfileId()): Flow<List<FeedingEvent>> = feedingDao.all(profileId)
+    fun historyDiapers(profileId: String = activeProfileId()): Flow<List<DiaperEvent>> = diaperDao.all(profileId)
+    fun historyTummy(profileId: String = activeProfileId()): Flow<List<TummyTimeEvent>> = tummyDao.all(profileId)
+    fun historySleep(profileId: String = activeProfileId()): Flow<List<SleepEvent>> = sleepDao.all(profileId)
+    fun historyWeights(profileId: String = activeProfileId()): Flow<List<WeightEvent>> = weightDao.all(profileId)
+    fun historyHeights(profileId: String = activeProfileId()): Flow<List<HeightEvent>> = heightDao.all(profileId)
+
     suspend fun assignLegacyDataToActiveProfile() = withContext(Dispatchers.IO) {
         val profileId = activeProfileId()
         if (profileId.isBlank()) return@withContext
@@ -133,9 +143,12 @@ class CryRepository private constructor(
         )
     }
 
-    suspend fun saveEvent(analysis: CryAnalysis, waveform: FloatArray? = null): Long =
+    suspend fun saveEvent(
+        analysis: CryAnalysis,
+        waveform: FloatArray? = null,
+        profileId: String = activeProfileId(),
+    ): Long =
         withContext(Dispatchers.IO) {
-            val profileId = activeProfileId()
             val r = analysis.result
             val predicted = r.topReason?.let { labels.indexOf(it) } ?: -1
             val id = cryDao.insert(
@@ -156,7 +169,7 @@ class CryRepository private constructor(
                 if (waveform != null) {
                     clipStore.saveClip(id, waveform, analysis.embedding)
                 }
-                setPending(id)
+                setPending(id, profileId)
             }
             id
         }
@@ -360,6 +373,14 @@ class CryRepository private constructor(
         ) > 0
     }
 
+    /** Deletes one completed feeding; a running timer must be stopped from Home first. */
+    suspend fun deleteFeeding(
+        eventId: Long,
+        profileId: String = activeProfileId(),
+    ): Boolean = withContext(Dispatchers.IO) {
+        feedingDao.deleteCompleted(eventId, profileId) > 0
+    }
+
     suspend fun activeFeeding(profileId: String = activeProfileId()): FeedingEvent? =
         withContext(Dispatchers.IO) { feedingDao.inProgress(profileId) }
 
@@ -529,6 +550,14 @@ class CryRepository private constructor(
             timestamp = startedAt,
             durationMs = durationMs,
         ) > 0
+    }
+
+    /** Deletes one completed sleep; a running timer must be stopped from Home first. */
+    suspend fun deleteSleep(
+        eventId: Long,
+        profileId: String = activeProfileId(),
+    ): Boolean = withContext(Dispatchers.IO) {
+        sleepDao.deleteCompleted(eventId, profileId) > 0
     }
 
     suspend fun activeSleep(profileId: String = activeProfileId()): SleepEvent? =
@@ -1018,7 +1047,7 @@ class CryRepository private constructor(
     suspend fun exportReportHtml(): String = withContext(Dispatchers.IO) {
         val lang = getLanguage()
         val df = SimpleDateFormat(
-            "EEE dd/MM/yyyy h:mm a",
+            "EEE dd/MM/yyyy HH:mm",
             if (lang == AppLang.EN) Locale.ENGLISH else Locale("el"),
         )
         val profileId = activeProfileId()
@@ -1093,10 +1122,18 @@ class CryRepository private constructor(
         val last7d = nowMs - 7L * 86_400_000L
         val cries24 = cries.count { it.timestamp >= last24h }
         val cries7 = cries.count { it.timestamp >= last7d }
-        val feeds24 = feedings.count { it.timestamp >= last24h && it.durationMs >= 0L }
+        val feeds24 = feedings.count { feed ->
+            val end = if (feed.durationMs < 0L) nowMs else feed.timestamp + feed.durationMs
+            feed.timestamp < nowMs && end > last24h
+        }
         val feedingDuration24 = feedings
-            .filter { it.timestamp >= last24h && it.durationMs > 0L }
-            .sumOf { it.durationMs }
+            .filter { it.durationMs > 0L }
+            .sumOf { feed ->
+                val end = feed.timestamp + feed.durationMs
+                val overlapStart = maxOf(feed.timestamp, last24h)
+                val overlapEnd = minOf(end, nowMs)
+                (overlapEnd - overlapStart).coerceAtLeast(0L)
+            }
         val sleeps24 = sleeps.count {
             val end = if (it.durationMs < 0L) nowMs else it.timestamp + it.durationMs
             it.timestamp < nowMs && end > last24h
@@ -1177,21 +1214,8 @@ class CryRepository private constructor(
             sb.append("<h2>${trS("Συνολική εικόνα")}</h2>")
             sb.append("<div class=\"row\"><span>${trS("Ημέρες καταγραφής")}</span><span>$daysTracked</span></div>")
             sb.append("<div class=\"row\"><span>${trS("Μέσος όρος κλαμάτων/ημέρα")}</span><span>${"%.1f".format(avgPerDay)}</span></div>")
-            fun hour12Label(hour24: Int): String {
-                val h = ((hour24 % 24) + 24) % 24
-                val (hour12, isPm) = when {
-                    h == 0 -> 12 to false
-                    h == 12 -> 12 to true
-                    h > 12 -> (h - 12) to true
-                    else -> h to false
-                }
-                val period = when (lang) {
-                    AppLang.EN -> if (isPm) "PM" else "AM"
-                    AppLang.EL -> if (isPm) "μ.μ." else "π.μ."
-                }
-                return "$hour12:00 $period"
-            }
-            val peakTxt = "${hour12Label(peakHour)}–${hour12Label((peakHour + 1) % 24)}"
+            fun hour24Label(hour24: Int): String = "%02d:00".format(((hour24 % 24) + 24) % 24)
+            val peakTxt = "${hour24Label(peakHour)}–${hour24Label((peakHour + 1) % 24)}"
             sb.append("<div class=\"row\"><span>${trS("Ώρα αιχμής")}</span><span>$peakTxt</span></div>")
             sb.append("<div class=\"row\"><span>${trS("Πιο δύσκολη ημέρα")}</span><span>${esc(dowNames.getOrElse(busiestDow + 1) { "" })}</span></div>")
             if (avgFeedGapMs != null) {
@@ -1577,10 +1601,11 @@ class CryRepository private constructor(
     /** Replaces all local data with the backup's contents, then rebuilds personalization. */
     suspend fun importBackupJson(json: String): Int = withContext(Dispatchers.IO) {
         val root = JSONObject(json)
+        validateBackupPayload(root)
 
         val profilesArr = root.optJSONArray("profiles")
-        if (profilesArr != null && profilesArr.length() > 0) {
-            val list = (0 until profilesArr.length()).map { i ->
+        val importedProfiles = if (profilesArr != null && profilesArr.length() > 0) {
+            (0 until profilesArr.length()).map { i ->
                 val o = profilesArr.getJSONObject(i)
                 BabyProfile(
                     name = o.optString("name", ""),
@@ -1590,108 +1615,93 @@ class CryRepository private constructor(
                     colicConfirmed = o.optBoolean("colicConfirmed", false),
                 )
             }
-            val active = root.optString("activeProfile", "")
-            persistProfiles(list, if (list.any { it.id == active }) active else list.first().id)
         } else {
             root.optJSONObject("profile")?.let { p ->
-                val one = BabyProfile(
-                    name = p.optString("name", ""),
-                    birthMillis = if (p.has("birthMillis")) p.optLong("birthMillis") else null,
-                    gender = BabyGender.fromNameOrNull(p.optString("gender", null)),
-                    id = newProfileId(),
-                    colicConfirmed = p.optBoolean("colicConfirmed", false),
+                listOf(
+                    BabyProfile(
+                        name = p.optString("name", ""),
+                        birthMillis = if (p.has("birthMillis")) p.optLong("birthMillis") else null,
+                        gender = BabyGender.fromNameOrNull(p.optString("gender", null)),
+                        id = newProfileId(),
+                        colicConfirmed = p.optBoolean("colicConfirmed", false),
+                    ),
                 )
-                persistProfiles(listOf(one), one.id)
             }
         }
-
-        cryDao.clearAllProfiles()
-        feedbackDao.clear()
-        feedingDao.clearAllProfiles()
-        diaperDao.clearAllProfiles()
-        tummyDao.clearAllProfiles()
-        sleepDao.clearAllProfiles()
-        weightDao.clearAllProfiles()
-        heightDao.clearAllProfiles()
-        // Old clips are keyed by the previous event ids, which no longer match.
-        clipStore.clearAll()
-        clearAllPending()
-
-        root.optJSONObject("settings")?.let { settings ->
-            val lang = if (settings.optString("language", "el") == "en") AppLang.EN else AppLang.EL
-            setLanguage(lang)
-            setPersonalizationEnabled(settings.optBoolean("personalizationEnabled", true))
-            setTummyReminderEnabled(settings.optBoolean("tummyReminderEnabled", true))
-            setTummyReminderHourAm(settings.optInt("tummyReminderHourAm", 11))
-            setTummyReminderHourPm(settings.optInt("tummyReminderHourPm", 18))
+        val importedActiveProfileId = importedProfiles?.let { profiles ->
+            val requested = root.optString("activeProfile", "")
+            if (profiles.any { it.id == requested }) requested else profiles.first().id
         }
+        val fallbackProfileId = importedActiveProfileId ?: activeProfileId()
+        val knownProfileIds = importedProfiles?.mapTo(mutableSetOf<String>()) { it.id }.orEmpty()
+        fun importProfileId(serializedId: String): String =
+            serializedId.takeIf { it.isNotBlank() && (knownProfileIds.isEmpty() || it in knownProfileIds) }
+                ?: fallbackProfileId
 
-        var restored = 0
         val eventIdMap = HashMap<Long, Long>()
-        root.optJSONArray("events")?.let { arr ->
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                val newId = cryDao.insert(
-                    CryEvent(
-                        profileId = o.optString("profileId", activeProfileId()),
-                        timestamp = o.getLong("timestamp"),
-                        cryDetected = o.optBoolean("cryDetected", true),
-                        predictedIndex = o.optInt("predictedIndex", -1),
-                        confirmedIndex = if (o.has("confirmedIndex")) o.getInt("confirmedIndex") else null,
-                        confidence = o.optDouble("confidence", 0.0).toFloat(),
-                        engine = o.optString("engine", "MODEL"),
-                        gateScore = o.optDouble("gateScore", 0.0).toFloat(),
+        val restored = db.withTransaction {
+            cryDao.clearAllProfiles()
+            feedbackDao.clear()
+            feedingDao.clearAllProfiles()
+            diaperDao.clearAllProfiles()
+            tummyDao.clearAllProfiles()
+            sleepDao.clearAllProfiles()
+            weightDao.clearAllProfiles()
+            heightDao.clearAllProfiles()
+
+            var restoredCount = 0
+            root.optJSONArray("events")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val newId = cryDao.insert(
+                        CryEvent(
+                            profileId = importProfileId(o.optString("profileId", "")),
+                            timestamp = o.getLong("timestamp"),
+                            cryDetected = o.optBoolean("cryDetected", true),
+                            predictedIndex = o.optInt("predictedIndex", -1),
+                            confirmedIndex = if (o.has("confirmedIndex")) o.getInt("confirmedIndex") else null,
+                            confidence = o.optDouble("confidence", 0.0).toFloat(),
+                            engine = o.optString("engine", "MODEL"),
+                            gateScore = o.optDouble("gateScore", 0.0).toFloat(),
+                        ),
                     )
-                )
-                val oldId = o.optLong("id", 0L)
-                if (oldId > 0L) eventIdMap[oldId] = newId
-                restored++
-            }
-        }
-        root.optJSONArray("clips")?.let { arr ->
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                val oldEventId = o.optLong("eventId", 0L)
-                val newEventId = eventIdMap[oldEventId]
-                if (newEventId != null) {
-                    val wavBytes = o.optString("wav", "")
-                        .takeIf { it.isNotBlank() }
-                        ?.let { Base64.decode(it, Base64.NO_WRAP) }
-                    val embeddingBytes = o.optString("embedding", "")
-                        .takeIf { it.isNotBlank() }
-                        ?.let { Base64.decode(it, Base64.NO_WRAP) }
-                    clipStore.restoreClipBytes(newEventId, wavBytes, embeddingBytes)
+                    val oldId = o.optLong("id", 0L)
+                    if (oldId > 0L) eventIdMap[oldId] = newId
+                    restoredCount++
                 }
             }
-        }
-        root.optJSONArray("feedback")?.let { arr ->
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                val oldSourceEventId = o.optLong("sourceEventId", 0L)
-                val restoredSourceEventId = eventIdMap[oldSourceEventId] ?: 0L
-                feedbackDao.insert(
-                    FeedbackExample(
-                        profileId = o.optString("profileId", activeProfileId()),
-                        timestamp = o.getLong("timestamp"),
-                        labelIndex = o.getInt("labelIndex"),
-                        embedding = decodeFloats(o.getString("embedding")),
-                        sourceEventId = restoredSourceEventId,
-                        isValidationHoldout = o.optBoolean("isValidationHoldout", false),
+            root.optJSONArray("feedback")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val oldSourceEventId = o.optLong("sourceEventId", 0L)
+                    val restoredSourceEventId = eventIdMap[oldSourceEventId] ?: 0L
+                    feedbackDao.insert(
+                        FeedbackExample(
+                            profileId = importProfileId(o.optString("profileId", "")),
+                            timestamp = o.getLong("timestamp"),
+                            labelIndex = o.getInt("labelIndex"),
+                            embedding = decodeFloats(o.getString("embedding")),
+                            sourceEventId = restoredSourceEventId,
+                            isValidationHoldout = o.optBoolean("isValidationHoldout", false),
+                        ),
                     )
-                )
+                }
             }
-        }
         root.optJSONArray("feedings")?.let { arr ->
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                feedingDao.insert(
-                    FeedingEvent(
-                        profileId = o.optString("profileId", activeProfileId()),
-                        timestamp = o.getLong("timestamp"),
-                        durationMs = o.optLong("durationMs", 0L),
-                        note = if (o.has("note")) o.getString("note") else null,
-                    )
-                )
+                    val durationMs = o.optLong("durationMs", 0L)
+                    // An in-progress timer cannot safely survive a backup restore.
+                    if (durationMs >= 0L) {
+                        feedingDao.insert(
+                            FeedingEvent(
+                                profileId = importProfileId(o.optString("profileId", "")),
+                                timestamp = o.getLong("timestamp"),
+                                durationMs = durationMs,
+                                note = if (o.has("note")) o.getString("note") else null,
+                            ),
+                        )
+                    }
             }
         }
         root.optJSONArray("diapers")?.let { arr ->
@@ -1699,7 +1709,7 @@ class CryRepository private constructor(
                 val o = arr.getJSONObject(i)
                 diaperDao.insert(
                     DiaperEvent(
-                        profileId = o.optString("profileId", activeProfileId()),
+                        profileId = importProfileId(o.optString("profileId", "")),
                         timestamp = o.getLong("timestamp"),
                         type = o.optString("type", DiaperType.WET.name),
                     )
@@ -1711,7 +1721,7 @@ class CryRepository private constructor(
                 val o = arr.getJSONObject(i)
                 tummyDao.insert(
                     TummyTimeEvent(
-                        profileId = o.optString("profileId", activeProfileId()),
+                        profileId = importProfileId(o.optString("profileId", "")),
                         timestamp = o.getLong("timestamp"),
                     )
                 )
@@ -1720,14 +1730,17 @@ class CryRepository private constructor(
         root.optJSONArray("sleeps")?.let { arr ->
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                sleepDao.insert(
-                    SleepEvent(
-                        profileId = o.optString("profileId", activeProfileId()),
-                        timestamp = o.getLong("timestamp"),
-                        durationMs = o.optLong("durationMs", 0L),
-                        note = if (o.has("note")) o.getString("note") else null,
-                    )
-                )
+                    val durationMs = o.optLong("durationMs", 0L)
+                    if (durationMs >= 0L) {
+                        sleepDao.insert(
+                            SleepEvent(
+                                profileId = importProfileId(o.optString("profileId", "")),
+                                timestamp = o.getLong("timestamp"),
+                                durationMs = durationMs,
+                                note = if (o.has("note")) o.getString("note") else null,
+                            ),
+                        )
+                    }
             }
         }
         root.optJSONArray("weights")?.let { arr ->
@@ -1737,7 +1750,7 @@ class CryRepository private constructor(
                 if (grams in 1..30_000) {
                     weightDao.insert(
                         WeightEvent(
-                            profileId = o.optString("profileId", activeProfileId()),
+                            profileId = importProfileId(o.optString("profileId", "")),
                             timestamp = o.getLong("timestamp"),
                             grams = grams,
                         ),
@@ -1752,7 +1765,7 @@ class CryRepository private constructor(
                 if (millimeters in 1..1_499) {
                     heightDao.insert(
                         HeightEvent(
-                            profileId = o.optString("profileId", activeProfileId()),
+                            profileId = importProfileId(o.optString("profileId", "")),
                             timestamp = o.getLong("timestamp"),
                             millimeters = millimeters,
                         ),
@@ -1760,12 +1773,25 @@ class CryRepository private constructor(
                 }
             }
         }
+            restoredCount
+        }
+        importedProfiles?.let { profiles ->
+            persistProfiles(profiles, importedActiveProfileId ?: profiles.first().id)
+        }
+        root.optJSONObject("settings")?.let { settings ->
+            val lang = if (settings.optString("language", "el") == "en") AppLang.EN else AppLang.EL
+            setLanguage(lang)
+            setPersonalizationEnabled(settings.optBoolean("personalizationEnabled", true))
+            setTummyReminderEnabled(settings.optBoolean("tummyReminderEnabled", true))
+            setTummyReminderHourAm(settings.optInt("tummyReminderHourAm", 11))
+            setTummyReminderHourPm(settings.optInt("tummyReminderHourPm", 18))
+        }
+        clearAllPending()
         root.optJSONArray("pending")?.let { arr ->
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                val profileId = o.optString("profileId", "")
-                val oldEventId = o.optLong("eventId", 0L)
-                val newEventId = eventIdMap[oldEventId]
+                val profileId = importProfileId(o.optString("profileId", ""))
+                val newEventId = eventIdMap[o.optLong("eventId", 0L)]
                 if (profileId.isNotBlank() && newEventId != null) {
                     val event = cryDao.byId(newEventId)
                     if (event != null && event.profileId == profileId &&
@@ -1776,9 +1802,73 @@ class CryRepository private constructor(
                 }
             }
         }
-
+        // Clips live in files rather than Room. Replace them only after the database import commits.
+        clipStore.clearAll()
+        root.optJSONArray("clips")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val newEventId = eventIdMap[o.optLong("eventId", 0L)]
+                if (newEventId != null) {
+                    val wavBytes = o.optString("wav", "")
+                        .takeIf { it.isNotBlank() }
+                        ?.let { Base64.decode(it, Base64.NO_WRAP) }
+                    val embeddingBytes = o.optString("embedding", "")
+                        .takeIf { it.isNotBlank() }
+                        ?.let { Base64.decode(it, Base64.NO_WRAP) }
+                    clipStore.restoreClipBytes(newEventId, wavBytes, embeddingBytes)
+                }
+            }
+        }
         rebuildPersonalization()
         restored
+    }
+
+    /** Reject malformed backup content before any existing records are replaced. */
+    private fun validateBackupPayload(root: JSONObject) {
+        val version = root.optInt("version", -1)
+        require(version in 1..8) { "Το αρχείο δεν είναι έγκυρο backup της εφαρμογής." }
+
+        val hasProfile = root.optJSONArray("profiles")?.length()?.let { it > 0 } == true ||
+            root.optJSONObject("profile") != null
+        require(hasProfile) { "Το backup δεν περιέχει προφίλ μωρού." }
+
+        val recordArrays = listOf(
+            "events",
+            "feedback",
+            "feedings",
+            "diapers",
+            "tummy",
+            "sleeps",
+            "weights",
+            "heights",
+        )
+        require(recordArrays.any(root::has)) { "Το backup δεν περιέχει δεδομένα εφαρμογής." }
+
+        fun requireTimestamps(key: String) {
+            root.optJSONArray(key)?.let { arr ->
+                for (i in 0 until arr.length()) arr.getJSONObject(i).getLong("timestamp")
+            }
+        }
+        requireTimestamps("events")
+        requireTimestamps("feedback")
+        requireTimestamps("feedings")
+        requireTimestamps("diapers")
+        requireTimestamps("tummy")
+        requireTimestamps("sleeps")
+        requireTimestamps("weights")
+        requireTimestamps("heights")
+        root.optJSONArray("feedback")?.let { arr ->
+            for (i in 0 until arr.length()) decodeFloats(arr.getJSONObject(i).getString("embedding"))
+        }
+        root.optJSONArray("clips")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val clip = arr.getJSONObject(i)
+                clip.optString("wav", "").takeIf { it.isNotBlank() }
+                    ?.let { Base64.decode(it, Base64.NO_WRAP) }
+                clip.optString("embedding", "").takeIf { it.isNotBlank() }
+                    ?.let { Base64.decode(it, Base64.NO_WRAP) }
+            }
+        }
     }
 
     private fun encodeFloats(v: FloatArray): String {

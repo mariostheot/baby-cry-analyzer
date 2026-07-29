@@ -22,6 +22,9 @@ interface CryEventDao {
     suspend fun confirmedEvents(profileId: String): List<CryEvent>
 
     @Query("SELECT * FROM cry_events WHERE profileId = :profileId ORDER BY timestamp DESC")
+    fun all(profileId: String): Flow<List<CryEvent>>
+
+    @Query("SELECT * FROM cry_events WHERE profileId = :profileId ORDER BY timestamp DESC")
     suspend fun allEvents(profileId: String): List<CryEvent>
 
     @Query("SELECT * FROM cry_events ORDER BY timestamp DESC")
@@ -121,8 +124,16 @@ interface FeedingDao {
         durationMs: Long,
     ): Int
 
+    @Query(
+        "DELETE FROM feeding_events WHERE id = :id AND profileId = :profileId AND durationMs >= 0",
+    )
+    suspend fun deleteCompleted(id: Long, profileId: String): Int
+
     @Query("SELECT * FROM feeding_events WHERE profileId = :profileId ORDER BY timestamp DESC LIMIT :limit")
     fun recent(profileId: String, limit: Int = 200): Flow<List<FeedingEvent>>
+
+    @Query("SELECT * FROM feeding_events WHERE profileId = :profileId ORDER BY timestamp DESC")
+    fun all(profileId: String): Flow<List<FeedingEvent>>
 
     @Query("SELECT * FROM feeding_events WHERE profileId = :profileId ORDER BY timestamp DESC")
     suspend fun allList(profileId: String): List<FeedingEvent>
@@ -150,6 +161,9 @@ interface DiaperDao {
 
     @Query("SELECT * FROM diaper_events WHERE profileId = :profileId ORDER BY timestamp DESC LIMIT :limit")
     fun recent(profileId: String, limit: Int = 200): Flow<List<DiaperEvent>>
+
+    @Query("SELECT * FROM diaper_events WHERE profileId = :profileId ORDER BY timestamp DESC")
+    fun all(profileId: String): Flow<List<DiaperEvent>>
 
     @Query("SELECT * FROM diaper_events WHERE profileId = :profileId ORDER BY timestamp DESC")
     suspend fun allList(profileId: String): List<DiaperEvent>
@@ -186,6 +200,9 @@ interface TummyDao {
 
     @Query("SELECT * FROM tummy_events WHERE profileId = :profileId ORDER BY timestamp DESC LIMIT :limit")
     fun recent(profileId: String, limit: Int = 200): Flow<List<TummyTimeEvent>>
+
+    @Query("SELECT * FROM tummy_events WHERE profileId = :profileId ORDER BY timestamp DESC")
+    fun all(profileId: String): Flow<List<TummyTimeEvent>>
 
     @Query("SELECT * FROM tummy_events WHERE profileId = :profileId ORDER BY timestamp DESC")
     suspend fun allList(profileId: String): List<TummyTimeEvent>
@@ -249,8 +266,16 @@ interface SleepDao {
         durationMs: Long,
     ): Int
 
+    @Query(
+        "DELETE FROM sleep_events WHERE id = :id AND profileId = :profileId AND durationMs >= 0",
+    )
+    suspend fun deleteCompleted(id: Long, profileId: String): Int
+
     @Query("SELECT * FROM sleep_events WHERE profileId = :profileId ORDER BY timestamp DESC LIMIT :limit")
     fun recent(profileId: String, limit: Int = 200): Flow<List<SleepEvent>>
+
+    @Query("SELECT * FROM sleep_events WHERE profileId = :profileId ORDER BY timestamp DESC")
+    fun all(profileId: String): Flow<List<SleepEvent>>
 
     @Query("SELECT * FROM sleep_events WHERE profileId = :profileId ORDER BY timestamp DESC")
     suspend fun allList(profileId: String): List<SleepEvent>
@@ -278,6 +303,9 @@ interface WeightDao {
 
     @Query("SELECT * FROM weight_events WHERE profileId = :profileId ORDER BY timestamp DESC LIMIT :limit")
     fun recent(profileId: String, limit: Int = 200): Flow<List<WeightEvent>>
+
+    @Query("SELECT * FROM weight_events WHERE profileId = :profileId ORDER BY timestamp ASC, id ASC")
+    fun all(profileId: String): Flow<List<WeightEvent>>
 
     @Query("SELECT * FROM weight_events WHERE profileId = :profileId ORDER BY timestamp ASC, id ASC")
     suspend fun allList(profileId: String): List<WeightEvent>
@@ -314,6 +342,9 @@ interface HeightDao {
 
     @Query("SELECT * FROM height_events WHERE profileId = :profileId ORDER BY timestamp DESC LIMIT :limit")
     fun recent(profileId: String, limit: Int = 200): Flow<List<HeightEvent>>
+
+    @Query("SELECT * FROM height_events WHERE profileId = :profileId ORDER BY timestamp ASC, id ASC")
+    fun all(profileId: String): Flow<List<HeightEvent>>
 
     @Query("SELECT * FROM height_events WHERE profileId = :profileId ORDER BY timestamp ASC, id ASC")
     suspend fun allList(profileId: String): List<HeightEvent>
